@@ -1,0 +1,159 @@
+.panel {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  padding: 26px;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+
+.heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.heading p {
+  margin: 0;
+  color: var(--color-primary);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.heading h2 {
+  margin: 7px 0 0;
+  color: var(--color-text);
+  font-size: 26px;
+}
+
+.heading > span {
+  border-radius: var(--radius-pill);
+  padding: 7px 10px;
+  background: var(--color-surface-subtle);
+  color: var(--color-text-muted);
+  font-size: 14px;
+  font-weight: 750;
+}
+
+.guide {
+  margin: 12px 0 20px;
+  color: var(--color-text-muted);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.card {
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  padding: 18px;
+  background: var(--color-surface-subtle);
+}
+
+.card header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.card header > div,
+.card h3 {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.card header span {
+  color: var(--color-primary);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.card h3 {
+  margin: 6px 0 0;
+  color: var(--color-text);
+  font-size: 17px;
+}
+
+.card header strong {
+  flex: 0 0 auto;
+  color: var(--color-primary-muted);
+  font-size: 13px;
+}
+
+.card ul {
+  display: grid;
+  gap: 7px;
+  margin: 16px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.card li {
+  color: var(--color-text-muted);
+  font-size: 14px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.card li.more {
+  color: var(--color-primary);
+  font-weight: 750;
+}
+
+.card button {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--color-primary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.card button:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 4px;
+}
+
+.card button:hover {
+  color: var(--color-primary-hover);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card button {
+    transition: none;
+  }
+}
+
+.empty {
+  margin: 0;
+  border-radius: var(--radius-control);
+  padding: 18px;
+  background: var(--color-surface-subtle);
+  color: var(--color-text-muted);
+  font-size: 14px;
+}
+
+@media (max-width: 720px) {
+  .panel {
+    padding: 20px;
+  }
+
+  .list {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,0 +1,60 @@
+<svg width="1600" height="1000" viewBox="0 0 1600 1000" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1600" height="1000" fill="#F5F5F7"/>
+  <rect x="96" y="76" width="1408" height="1" fill="#D2D2D7"/>
+  <text x="96" y="52" font-family="Malgun Gothic, Apple SD Gothic Neo, Segoe UI, sans-serif" font-size="24" font-weight="700" fill="#1D1D1F">모두의 뇌</text>
+  <text x="1356" y="52" font-family="Malgun Gothic, Apple SD Gothic Neo, Segoe UI, sans-serif" font-size="16" fill="#6E6E73">Shared Brain Agent</text>
+
+  <text x="96" y="210" font-family="Malgun Gothic, Apple SD Gothic Neo, Segoe UI, sans-serif" font-size="82" font-weight="700" fill="#1D1D1F">모두의 뇌</text>
+  <text x="100" y="280" font-family="Malgun Gothic, Apple SD Gothic Neo, Segoe UI, sans-serif" font-size="34" font-weight="400" fill="#1D1D1F">팀 전체가 함께 쓰는 공유 두뇌</text>
+  <text x="100" y="334" font-family="Malgun Gothic, Apple SD Gothic Neo, Segoe UI, sans-serif" font-size="22" fill="#6E6E73">문서와 회의에 흩어진 맥락을 연결해</text>
+  <text x="100" y="370" font-family="Malgun Gothic, Apple SD Gothic Neo, Segoe UI, sans-serif" font-size="22" fill="#6E6E73">같은 배경지식 위에서 협업합니다.</text>
+
+  <rect x="100" y="406" width="216" height="48" rx="24" fill="#0066CC"/>
+  <text x="132" y="438" font-family="Malgun Gothic, Apple SD Gothic Neo, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#FFFFFF">맥락 공유 AI</text>
+
+  <g transform="translate(776 130)">
+    <rect x="0" y="0" width="728" height="520" rx="38" fill="#FFFFFF" stroke="#D2D2D7"/>
+    <circle cx="364" cy="260" r="104" fill="#0066CC"/>
+    <circle cx="364" cy="260" r="72" fill="#2997FF" opacity="0.22"/>
+    <circle cx="164" cy="160" r="54" fill="#F5F5F7" stroke="#D2D2D7" stroke-width="2"/>
+    <circle cx="564" cy="160" r="54" fill="#F5F5F7" stroke="#D2D2D7" stroke-width="2"/>
+    <circle cx="164" cy="370" r="54" fill="#F5F5F7" stroke="#D2D2D7" stroke-width="2"/>
+    <circle cx="564" cy="370" r="54" fill="#F5F5F7" stroke="#D2D2D7" stroke-width="2"/>
+    <path d="M214 182L272 218" stroke="#A1A1A6" stroke-width="4" stroke-linecap="round"/>
+    <path d="M514 182L456 218" stroke="#A1A1A6" stroke-width="4" stroke-linecap="round"/>
+    <path d="M214 348L272 306" stroke="#A1A1A6" stroke-width="4" stroke-linecap="round"/>
+    <path d="M514 348L456 306" stroke="#A1A1A6" stroke-width="4" stroke-linecap="round"/>
+    <rect x="130" y="136" width="68" height="48" rx="10" fill="#FFFFFF" stroke="#D2D2D7"/>
+    <path d="M146 154H182M146 168H174" stroke="#0066CC" stroke-width="5" stroke-linecap="round"/>
+    <circle cx="564" cy="160" r="18" fill="#0066CC" opacity="0.94"/>
+    <circle cx="552" cy="148" r="7" fill="#FFFFFF" opacity="0.82"/>
+    <path d="M134 382C150 352 178 352 194 382" stroke="#0066CC" stroke-width="8" stroke-linecap="round"/>
+    <circle cx="164" cy="354" r="16" fill="#0066CC"/>
+    <rect x="530" y="340" width="68" height="56" rx="10" fill="#FFFFFF" stroke="#D2D2D7"/>
+    <path d="M548 358H580M548 374H590" stroke="#0066CC" stroke-width="5" stroke-linecap="round"/>
+    <text x="302" y="252" font-family="Malgun Gothic, Apple SD Gothic Neo, Segoe UI, sans-serif" font-size="24" font-weight="700" fill="#FFFFFF">공유</text>
+    <text x="302" y="286" font-family="Malgun Gothic, Apple SD Gothic Neo, Segoe UI, sans-serif" font-size="24" font-weight="700" fill="#FFFFFF">지식망</text>
+  </g>
+
+  <g transform="translate(96 732)">
+    <rect x="0" y="0" width="438" height="168" rx="28" fill="#FFFFFF" stroke="#D2D2D7"/>
+    <circle cx="56" cy="52" r="24" fill="#E8F2FF"/>
+    <text x="50" y="60" font-family="Malgun Gothic, Apple SD Gothic Neo, Segoe UI, sans-serif" font-size="22" font-weight="700" fill="#0066CC">1</text>
+    <text x="32" y="108" font-family="Malgun Gothic, Apple SD Gothic Neo, Segoe UI, sans-serif" font-size="28" font-weight="700" fill="#1D1D1F">맥락 수집</text>
+    <text x="32" y="140" font-family="Malgun Gothic, Apple SD Gothic Neo, Segoe UI, sans-serif" font-size="17" fill="#6E6E73">회의록, 메모, 피드백을 한곳에 모읍니다.</text>
+  </g>
+  <g transform="translate(581 732)">
+    <rect x="0" y="0" width="438" height="168" rx="28" fill="#FFFFFF" stroke="#D2D2D7"/>
+    <circle cx="56" cy="52" r="24" fill="#E8F2FF"/>
+    <text x="50" y="60" font-family="Malgun Gothic, Apple SD Gothic Neo, Segoe UI, sans-serif" font-size="22" font-weight="700" fill="#0066CC">2</text>
+    <text x="32" y="108" font-family="Malgun Gothic, Apple SD Gothic Neo, Segoe UI, sans-serif" font-size="28" font-weight="700" fill="#1D1D1F">관점 연결</text>
+    <text x="32" y="140" font-family="Malgun Gothic, Apple SD Gothic Neo, Segoe UI, sans-serif" font-size="17" fill="#6E6E73">사람별 판단 근거와 차이를 연결합니다.</text>
+  </g>
+  <g transform="translate(1066 732)">
+    <rect x="0" y="0" width="438" height="168" rx="28" fill="#FFFFFF" stroke="#D2D2D7"/>
+    <circle cx="56" cy="52" r="24" fill="#E8F2FF"/>
+    <text x="50" y="60" font-family="Malgun Gothic, Apple SD Gothic Neo, Segoe UI, sans-serif" font-size="22" font-weight="700" fill="#0066CC">3</text>
+    <text x="32" y="108" font-family="Malgun Gothic, Apple SD Gothic Neo, Segoe UI, sans-serif" font-size="28" font-weight="700" fill="#1D1D1F">질문 정리</text>
+    <text x="32" y="140" font-family="Malgun Gothic, Apple SD Gothic Neo, Segoe UI, sans-serif" font-size="17" fill="#6E6E73">남은 질문과 다음 확인 사항을 보여줍니다.</text>
+  </g>
+</svg>

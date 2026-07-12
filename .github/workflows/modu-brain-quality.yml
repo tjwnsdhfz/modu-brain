@@ -1,0 +1,260 @@
+name: Modu Brain quality
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/modu-brain-quality.yml"
+      - ".env.example"
+      - ".nvmrc"
+      - "package.json"
+      - "package-lock.json"
+      - "render.yaml"
+      - "index.html"
+      - ".openai/**"
+      - "build/**"
+      - "public/**"
+      - "scripts/**"
+      - "server/**"
+      - "src/**"
+      - "supabase/**"
+      - "tests/**"
+      - "worker/**"
+      - "wrangler.sites.jsonc"
+      - "playwright.config.ts"
+      - "tsconfig.json"
+      - "vite.config.ts"
+      - "vitest.config.ts"
+      - "eslint.config.mjs"
+  push:
+    branches:
+      - "main"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: modu-brain-quality-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Lint, types, unit tests, and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit and contract tests with coverage
+        run: npm run test:coverage
+
+      - name: Production build
+        run: npm run build
+
+      - name: Validate free-tier operations tooling
+        run: npm run ops:validate
+
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ github.run_id }}
+          path: coverage/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  secret-scan:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Scan for committed credentials
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  resilience-smoke:
+    name: Local resilience and load smoke
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build production assets
+        run: npm run build
+
+      - name: Exercise the local production server
+        shell: bash
+        env:
+          HOST: 127.0.0.1
+          PORT: 4173
+          MODU_BRAIN_ANALYSIS_PROVIDER: local-heuristic
+          MODU_BRAIN_OPENAI_ENABLED: "false"
+          LOAD_TEST_PHASES: "5:2,25:2"
+          LOAD_TEST_P95_MS: "500"
+        run: |
+          npm start > /tmp/modu-brain-server.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:4173/api/health/live > /dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          curl --fail http://127.0.0.1:4173/api/health/live
+          npm run ops:load
+
+  public-smoke:
+    name: Public browser smoke
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run public smoke and accessibility tests
+        env:
+          MODU_BRAIN_ANALYSIS_PROVIDER: local-heuristic
+        run: npx playwright test tests/e2e/public-smoke.spec.ts tests/e2e/accessibility.spec.ts
+
+      - name: Upload browser diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: public-smoke-${{ github.run_id }}
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  database-and-e2e:
+    name: Supabase policies and authenticated journey
+    needs: quality
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Set up Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.109.1
+
+      - name: Start local Supabase
+        run: supabase start
+
+      - name: Apply migrations and seed from scratch
+        run: supabase db reset
+
+      - name: Verify migration rollback and reapply
+        shell: bash
+        run: |
+          source <(supabase status -o env)
+          while IFS= read -r file; do
+            psql "$DB_URL" --set ON_ERROR_STOP=1 --file "$file"
+          done < <(find supabase/rollback -maxdepth 1 -name '*.down.sql' -print | sort -r)
+          while IFS= read -r file; do
+            psql "$DB_URL" --set ON_ERROR_STOP=1 --file "$file"
+          done < <(find supabase/migrations -maxdepth 1 -name '*.sql' -print | sort)
+
+      - name: Run pgTAP database policy tests
+        run: supabase test db
+
+      - name: Export local Supabase settings
+        shell: bash
+        run: |
+          source <(supabase status -o env)
+          echo "SUPABASE_URL=$API_URL" >> "$GITHUB_ENV"
+          echo "SUPABASE_ANON_KEY=$ANON_KEY" >> "$GITHUB_ENV"
+          echo "SUPABASE_SERVICE_ROLE_KEY=$SERVICE_ROLE_KEY" >> "$GITHUB_ENV"
+          echo "VITE_SUPABASE_URL=$API_URL" >> "$GITHUB_ENV"
+          echo "VITE_SUPABASE_ANON_KEY=$ANON_KEY" >> "$GITHUB_ENV"
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run authenticated end-to-end journey
+        env:
+          E2E_TEST_EMAIL: modu-brain-e2e@example.test
+          MODU_BRAIN_ANALYSIS_PROVIDER: local-heuristic
+          IP_HASH_SECRET: ci-only-ip-hash-secret-not-for-production
+        run: npx playwright test tests/e2e/authenticated-flow.spec.ts
+
+      - name: Upload browser diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: authenticated-e2e-${{ github.run_id }}
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 7

@@ -1,0 +1,73 @@
+{
+  "name": "modu-brain",
+  "version": "1.0.0",
+  "private": true,
+  "description": "근거와 변화가 연결되는 협업 맥락 웹 앱",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tjwnsdhfz/modu-brain.git"
+  },
+  "homepage": "https://modu-brain-n031.ksjun29.chatgpt.site",
+  "engines": {
+    "node": "22.20.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "npm run typecheck && vite build && node scripts/verify-sites-build.mjs",
+    "preview": "vite preview",
+    "start": "node --env-file-if-exists=.env server/server.mjs",
+    "api": "node --env-file-if-exists=.env server/server.mjs",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --max-warnings=0",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:eval": "vitest run tests/eval/korean-context-eval.test.mjs",
+    "test:e2e": "playwright test",
+    "test:e2e:install": "playwright install chromium",
+    "ops:backup": "node scripts/ops/backup-supabase.mjs",
+    "ops:restore": "node scripts/ops/restore-supabase.mjs",
+    "ops:load": "node scripts/ops/load-test.mjs",
+    "ops:monitor": "node scripts/ops/monitor-health.mjs",
+    "ops:migrations:check": "node scripts/ops/check-migrations.mjs",
+    "ops:validate": "node --check scripts/ops/backup-supabase.mjs && node --check scripts/ops/restore-supabase.mjs && node --check scripts/ops/load-test.mjs && node --check scripts/ops/monitor-health.mjs && npm run ops:migrations:check",
+    "render:og": "node scripts/render-og.mjs",
+    "check": "npm run lint && npm run test:coverage && npm run ops:validate && npm run build"
+  },
+  "dependencies": {
+    "jose": "6.2.3",
+    "openai": "^6.46.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "zod": "^4.4.3"
+  },
+  "overrides": {
+    "ws": "8.21.0"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.12.1",
+    "@cloudflare/vite-plugin": "1.44.0",
+    "@eslint/js": "9.39.4",
+    "@playwright/test": "^1.61.1",
+    "@testing-library/dom": "10.4.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/node": "22.20.1",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "@vitest/coverage-v8": "^4.1.10",
+    "eslint": "9.39.4",
+    "eslint-plugin-jsx-a11y": "6.10.2",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.3",
+    "globals": "^17.7.0",
+    "jsdom": "^29.1.1",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.63.0",
+    "vite": "^8.1.3",
+    "vitest": "^4.1.10",
+    "wrangler": "4.110.0"
+  }
+}

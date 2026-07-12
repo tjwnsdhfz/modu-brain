@@ -1,0 +1,41 @@
+services:
+  - type: web
+    name: modu-brain-tjwnsdhfz
+    runtime: node
+    plan: free
+    region: singapore
+    branch: main
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health/live
+    # Deploy the independent main branch only after its GitHub checks pass.
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+      - key: MODU_BRAIN_ANALYSIS_PROVIDER
+        value: local-heuristic
+      - key: MODU_BRAIN_OPENAI_ENABLED
+        value: "false"
+      - key: MODU_BRAIN_OPENAI_MODEL
+        value: gpt-5.6-terra
+      - key: MODU_BRAIN_OPENAI_REASONING_EFFORT
+        value: low
+      - key: MODU_BRAIN_TRUST_PROXY
+        value: render
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_PUBLISHABLE_KEY
+        sync: false
+      - key: SUPABASE_SECRET_KEY
+        sync: false
+      - key: VITE_SUPABASE_URL
+        sync: false
+      - key: VITE_SUPABASE_PUBLISHABLE_KEY
+        sync: false
+      - key: SAFETY_IDENTIFIER_SECRET
+        generateValue: true
+      - key: IP_HASH_SECRET
+        generateValue: true
