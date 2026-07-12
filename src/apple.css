@@ -97,16 +97,6 @@ li {
   outline-offset: 3px;
 }
 
-#main-content > main,
-#main-content > .app-shell {
-  animation: apple-page-enter 760ms var(--ease-spring) both;
-}
-
-@keyframes apple-page-enter {
-  from { opacity: 0; transform: translateY(14px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
 /* Floating glass navigation */
 .site-header {
   top: 14px;
@@ -154,7 +144,7 @@ li {
 
 .site-header nav a,
 .nav-action {
-  min-height: 42px;
+  min-height: 44px;
   border-radius: var(--radius-pill);
   padding: 0 15px;
   color: #4b4b50;
@@ -1009,8 +999,6 @@ li {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  #main-content > main,
-  #main-content > .app-shell,
   .site-header nav.menu-open,
   .loading-card {
     animation: none;
