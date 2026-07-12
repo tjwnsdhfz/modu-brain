@@ -54,6 +54,14 @@ const kindLabels: Record<ThoughtKind, string> = {
   term: "핵심어",
 };
 
+const kindDescriptions: Record<ThoughtKind, string> = {
+  topic: "기록 전체를 묶는 중심 맥락",
+  perspective: "참여자가 남긴 관점과 우려",
+  decision: "팀이 합의하거나 선택한 내용",
+  question: "후속 확인이 필요한 열린 질문",
+  term: "반복해서 등장한 주요 개념",
+};
+
 const lifecycleLabels = {
   new: "새로 발견",
   changed: "변경됨",
@@ -228,12 +236,19 @@ function KnowledgeMap({ map, result, previousResult, onOpenEvidence }: Knowledge
             흩어진 기록을 생각 단위로 나누고, 선택한 생각과 바로 이어진 맥락을 따라가 보세요.
           </p>
         </div>
-        <div className="brain-stat" aria-label={`${thoughtCount}개 생각, ${graph.edges.length}개 연결`}>
-          <strong>{thoughtCount}</strong>
-          <span>개의 생각</span>
-          <i aria-hidden="true" />
-          <strong>{graph.edges.length}</strong>
-          <span>개의 연결</span>
+        <div className="brain-summary" aria-label={`${thoughtCount}개 생각, ${graph.edges.length}개 연결, 근거 판독 ${confidenceCount}개`}>
+          <div>
+            <span>생각</span>
+            <strong>{thoughtCount}</strong>
+          </div>
+          <div>
+            <span>연결</span>
+            <strong>{graph.edges.length}</strong>
+          </div>
+          <div>
+            <span>근거 판독</span>
+            <strong>{confidenceCount}</strong>
+          </div>
         </div>
       </div>
 
@@ -241,17 +256,17 @@ function KnowledgeMap({ map, result, previousResult, onOpenEvidence }: Knowledge
         <p className="knowledge-empty">분석 결과에서 표시할 생각을 찾지 못했습니다.</p>
       ) : (
         <div className="brain-shell" data-testid="brain-canvas">
-          <div className="brain-toolbar" aria-label="브레인 캔버스 탐색 도구">
-            <label className="brain-search">
-              <span>생각 검색</span>
-              <input
-                type="search"
-                value={query}
-                placeholder="이름이나 내용으로 찾기"
-                onChange={(event) => setQuery(event.target.value)}
-              />
-            </label>
-            <div className="brain-toolbar-groups">
+          <div className="brain-toolbar" aria-label="지식맵 탐색 도구">
+            <div className="brain-toolbar-primary">
+              <label className="brain-search">
+                <span>생각 검색</span>
+                <input
+                  type="search"
+                  value={query}
+                  placeholder="결정, 사람, 질문을 검색하세요"
+                  onChange={(event) => setQuery(event.target.value)}
+                />
+              </label>
               <div className="brain-view-switch" role="group" aria-label="지식맵 보기 방식">
                 <button
                   type="button"
@@ -268,6 +283,9 @@ function KnowledgeMap({ map, result, previousResult, onOpenEvidence }: Knowledge
                   의미 목록
                 </button>
               </div>
+            </div>
+            <div className="brain-toolbar-secondary">
+              <span className="brain-filter-label">표시할 생각</span>
               <div className="brain-filters" role="group" aria-label="생각 유형 필터">
                 {filters.map((filter) => {
                   const count = filter.id === "all"
@@ -302,26 +320,38 @@ function KnowledgeMap({ map, result, previousResult, onOpenEvidence }: Knowledge
             {selectedNode ? `${kindLabels[selectedNode.kind]} ${selectedNode.label} 선택됨` : "선택 해제됨"}
           </p>
 
-          {(Object.values(lifecycleCounts).some((count) => count > 0) || confidenceCount > 0) && (
-            <div className="brain-state-legend" role="group" aria-label="에이전트 상태 범례">
-              <strong>에이전트 판독</strong>
-              <ul aria-label="결정 변화 상태">
-                {Object.entries(lifecycleLabels).map(([status, label]) => {
-                  const count = lifecycleCounts[status as keyof typeof lifecycleCounts];
-                  if (count === 0) return null;
-                  return (
-                    <li key={status} data-lifecycle={status}>
-                      <span aria-hidden="true" /> {label} {count}
-                    </li>
-                  );
-                })}
+          <div className="brain-map-legend" role="group" aria-label="지식맵 범례">
+            <div className="brain-kind-legend">
+              <strong>생각 유형</strong>
+              <ul>
+                {(Object.keys(kindLabels) as ThoughtKind[]).map((kind) => (
+                  <li key={kind} className={`brain-kind-${kind}`} title={kindDescriptions[kind]}>
+                    <span aria-hidden="true" /> {kindLabels[kind]}
+                  </li>
+                ))}
               </ul>
-              {confidenceCount > 0 && <span>근거 신뢰도 제공 {confidenceCount}개</span>}
-              {contradictionCount > 0 && (
-                <span className="brain-contradiction-count">모순 후보 {contradictionCount}건 · 원문 확인 필요</span>
-              )}
             </div>
-          )}
+            {(Object.values(lifecycleCounts).some((count) => count > 0) || confidenceCount > 0) && (
+              <div className="brain-state-legend" role="group" aria-label="에이전트 상태 범례">
+                <strong>변화 신호</strong>
+                <ul aria-label="결정 변화 상태">
+                  {Object.entries(lifecycleLabels).map(([status, label]) => {
+                    const count = lifecycleCounts[status as keyof typeof lifecycleCounts];
+                    if (count === 0) return null;
+                    return (
+                      <li key={status} data-lifecycle={status}>
+                        <span aria-hidden="true" /> {label} {count}
+                      </li>
+                    );
+                  })}
+                </ul>
+                {confidenceCount > 0 && <span className="brain-confidence-count">근거 판독 {confidenceCount}개</span>}
+                {contradictionCount > 0 && (
+                  <span className="brain-contradiction-count">모순 후보 {contradictionCount}건 · 원문 확인 필요</span>
+                )}
+              </div>
+            )}
+          </div>
 
           <div className="brain-content" data-view={viewMode}>
             <section className="brain-outline" aria-labelledby={outlineId} hidden={viewMode !== "list"}>
@@ -375,7 +405,10 @@ function KnowledgeMap({ map, result, previousResult, onOpenEvidence }: Knowledge
               hidden={viewMode !== "graph"}
             >
               <div className="brain-graph-controls">
-                <p id={graphHelpId}>방향키로 생각을 이동하고 Enter로 선택합니다. Esc는 선택 해제, +/−/0은 배율 조절입니다.</p>
+                <div>
+                  <strong>맥락 캔버스</strong>
+                  <p id={graphHelpId}>방향키 이동 · Enter 선택 · Esc 해제 · +/−/0 배율</p>
+                </div>
                 <div className="brain-zoom" role="group" aria-label="그래프 배율 조절">
                   <button
                     type="button"
@@ -530,9 +563,15 @@ function BrainInspector({
     <aside className="brain-inspector" id={id} aria-live="polite" aria-label="선택한 생각 상세">
       {node ? (
         <>
-          <div className={`brain-inspector-type brain-kind-${node.kind}`}>{kindLabels[node.kind]}</div>
+          <div className="brain-inspector-header">
+            <div className={`brain-inspector-type brain-kind-${node.kind}`}>
+              <span aria-hidden="true" />
+              {kindLabels[node.kind]}
+            </div>
+            <small>{edges.length}개 생각과 직접 연결</small>
+          </div>
           <h3>{node.label}</h3>
-          <p>{node.summary}</p>
+          <p className="brain-inspector-summary">{node.summary}</p>
           {(node.lifecycle || node.agentConfidence || node.observedAt) && (
             <dl className="brain-inspector-meta">
               {node.lifecycle && (
@@ -595,7 +634,12 @@ function BrainInspector({
             </button>
           )}
         </>
-      ) : <p>생각을 선택하면 내용과 연결 관계가 여기에 표시됩니다.</p>}
+      ) : (
+        <div className="brain-inspector-empty">
+          <strong>생각을 선택해 보세요</strong>
+          <p>노드의 요약, 변화 상태, 근거 신뢰도와 직접 연결된 생각을 여기에서 확인할 수 있습니다.</p>
+        </div>
+      )}
     </aside>
   );
 }
