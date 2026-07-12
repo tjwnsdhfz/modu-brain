@@ -55,6 +55,10 @@ describe("KnowledgeMap", () => {
     render(<KnowledgeMap map={dynamicMap} />);
 
     const canvas = screen.getByTestId("brain-canvas");
+    const legend = screen.getByRole("group", { name: "지식맵 범례" });
+    expect(within(legend).getByText("중심 주제")).toBeInTheDocument();
+    expect(within(legend).getByText("결정")).toBeInTheDocument();
+    expect(within(legend).getByText("질문")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "그래프 보기" })).toHaveAttribute("aria-pressed", "true");
     expect(within(canvas).getByRole("img", { name: /프로젝트 맥락 지도/ })).toBeInTheDocument();
     expect(within(canvas).getByTestId("brain-node-brain-topic-topic-main")).toHaveAccessibleName(
@@ -171,7 +175,7 @@ describe("KnowledgeMap", () => {
     expect(focused).toHaveAttribute("aria-pressed", "true");
     await user.keyboard("{Escape}");
     expect(focused).toHaveAttribute("aria-pressed", "false");
-    expect(screen.getByText("생각을 선택하면 내용과 연결 관계가 여기에 표시됩니다.")).toBeInTheDocument();
+    expect(screen.getByText("생각을 선택해 보세요")).toBeInTheDocument();
 
     await user.keyboard("+");
     expect(container.querySelector(".brain-zoom-value")).toHaveTextContent("125%");
