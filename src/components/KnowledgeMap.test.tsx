@@ -89,6 +89,70 @@ describe("KnowledgeMap", () => {
     expect(onOpenEvidence).toHaveBeenCalledWith(dynamicMap.nodes[2].evidence);
   });
 
+  it("exposes lifecycle, confidence, timestamps, and contradiction warnings accessibly", async () => {
+    const user = userEvent.setup();
+    const previous = {
+      ...sampleAnalysis,
+      summary: { ...sampleAnalysis.summary, generatedAt: "2026-07-10T00:00:00.000Z" },
+      decisions: [
+        {
+          ...sampleAnalysis.decisions[0],
+          id: "sharing",
+          decision: "외부 공유 링크를 허용한다.",
+          reason: "데모 접근성을 높인다.",
+        },
+        {
+          ...sampleAnalysis.decisions[1],
+          id: "resolved-upload",
+          decision: "파일 업로드를 검토한다.",
+        },
+      ],
+    };
+    const latest = {
+      ...sampleAnalysis,
+      summary: { ...sampleAnalysis.summary, generatedAt: "2026-07-11T00:00:00.000Z" },
+      decisions: [
+        {
+          ...previous.decisions[0],
+          reason: "공개 데모 접근성을 높인다.",
+          agentConfidence: {
+            score: 0.86,
+            level: "high" as const,
+            rationale: "원문 2개에서 정확히 일치하는 인용문을 확인했습니다.",
+            evidenceCount: 2,
+            sourceCount: 2,
+          },
+        },
+        {
+          ...sampleAnalysis.decisions[2],
+          id: "sharing-denied",
+          decision: "외부 공유 링크를 금지한다.",
+          reason: "보안을 우선한다.",
+        },
+      ],
+    };
+
+    render(<KnowledgeMap result={latest} previousResult={previous} />);
+
+    const legend = screen.getByRole("group", { name: "에이전트 상태 범례" });
+    expect(within(legend).getByText("변경됨 1")).toBeInTheDocument();
+    expect(within(legend).getByText("새로 발견 1")).toBeInTheDocument();
+    expect(within(legend).getByText("해결됨 1")).toBeInTheDocument();
+    expect(within(legend).getByText(/모순 후보 1건/)).toBeInTheDocument();
+
+    const changed = screen.getByTestId("brain-node-brain-decision-sharing");
+    expect(changed).toHaveAttribute("data-lifecycle", "changed");
+    expect(changed).toHaveAccessibleName(/상태 변경됨, 근거 신뢰도 높음 86퍼센트, 모순 후보 1건/);
+    await user.click(changed);
+
+    const inspector = screen.getByRole("complementary", { name: "선택한 생각 상세" });
+    expect(within(inspector).getByText("변경됨")).toBeInTheDocument();
+    expect(within(inspector).getByText("높음 · 86%")).toBeInTheDocument();
+    expect(within(inspector).getByText(/정확히 일치하는 인용문/)).toBeInTheDocument();
+    expect(within(inspector).getByRole("note")).toHaveTextContent("원문 근거를 확인");
+    expect(inspector.querySelector("time")).toHaveAttribute("datetime", "2026-07-11T00:00:00.000Z");
+  });
+
   it("uses roving focus, directional navigation, Enter selection, Escape clearing, and zoom shortcuts", async () => {
     const user = userEvent.setup();
     const { container } = render(<KnowledgeMap result={sampleAnalysis} />);

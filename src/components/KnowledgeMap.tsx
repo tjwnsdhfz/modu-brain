@@ -24,6 +24,7 @@ import {
 type KnowledgeMapProps = {
   map?: ContextAnalysisResult["knowledgeMap"];
   result?: ThoughtGraphResult;
+  previousResult?: ThoughtGraphResult;
   onOpenEvidence?: (evidence: EvidenceRef[]) => void;
 };
 
@@ -53,7 +54,20 @@ const kindLabels: Record<ThoughtKind, string> = {
   term: "핵심어",
 };
 
-function KnowledgeMap({ map, result, onOpenEvidence }: KnowledgeMapProps) {
+const lifecycleLabels = {
+  new: "새로 발견",
+  changed: "변경됨",
+  stable: "유지됨",
+  resolved: "해결됨",
+} as const;
+
+const confidenceLabels = {
+  low: "낮음",
+  medium: "보통",
+  high: "높음",
+} as const;
+
+function KnowledgeMap({ map, result, previousResult, onOpenEvidence }: KnowledgeMapProps) {
   const headingId = useId();
   const graphTitleId = useId();
   const graphDescriptionId = useId();
@@ -63,8 +77,11 @@ function KnowledgeMap({ map, result, onOpenEvidence }: KnowledgeMapProps) {
   const compactView = useMediaQuery(COMPACT_BRAIN_QUERY);
   const reducedMotion = useMediaQuery(REDUCED_MOTION_QUERY);
   const graph = useMemo(
-    () => buildThoughtGraph(result ?? map ?? { nodes: [], links: [] }),
-    [map, result],
+    () => buildThoughtGraph(
+      result ?? map ?? { nodes: [], links: [] },
+      { previousResult },
+    ),
+    [map, previousResult, result],
   );
   const [activeFilter, setActiveFilter] = useState<ThoughtFilter>("all");
   const [query, setQuery] = useState("");
@@ -123,6 +140,9 @@ function KnowledgeMap({ map, result, onOpenEvidence }: KnowledgeMapProps) {
   const hiddenVisualCount = Math.max(0, matchingNodes.length - visualNodes.length);
   const hiddenOutlineCount = Math.max(0, matchingNodes.length - outlineNodes.length);
   const worldSize = brainWorldSize(visualNodes, zoom);
+  const lifecycleCounts = countLifecycle(graph.nodes);
+  const confidenceCount = graph.nodes.filter((node) => node.agentConfidence).length;
+  const contradictionCount = new Set(graph.nodes.flatMap((node) => node.contradictionIds ?? [])).size;
 
   useEffect(() => {
     if (reducedMotion || viewMode !== "graph" || !effectiveSelectedId) return;
@@ -282,6 +302,27 @@ function KnowledgeMap({ map, result, onOpenEvidence }: KnowledgeMapProps) {
             {selectedNode ? `${kindLabels[selectedNode.kind]} ${selectedNode.label} 선택됨` : "선택 해제됨"}
           </p>
 
+          {(Object.values(lifecycleCounts).some((count) => count > 0) || confidenceCount > 0) && (
+            <div className="brain-state-legend" role="group" aria-label="에이전트 상태 범례">
+              <strong>에이전트 판독</strong>
+              <ul aria-label="결정 변화 상태">
+                {Object.entries(lifecycleLabels).map(([status, label]) => {
+                  const count = lifecycleCounts[status as keyof typeof lifecycleCounts];
+                  if (count === 0) return null;
+                  return (
+                    <li key={status} data-lifecycle={status}>
+                      <span aria-hidden="true" /> {label} {count}
+                    </li>
+                  );
+                })}
+              </ul>
+              {confidenceCount > 0 && <span>근거 신뢰도 제공 {confidenceCount}개</span>}
+              {contradictionCount > 0 && (
+                <span className="brain-contradiction-count">모순 후보 {contradictionCount}건 · 원문 확인 필요</span>
+              )}
+            </div>
+          )}
+
           <div className="brain-content" data-view={viewMode}>
             <section className="brain-outline" aria-labelledby={outlineId} hidden={viewMode !== "list"}>
               <div className="brain-outline-heading">
@@ -309,10 +350,18 @@ function KnowledgeMap({ map, result, onOpenEvidence }: KnowledgeMapProps) {
                           aria-controls={inspectorId}
                           onClick={() => selectNode(node.id)}
                         >
-                          <span>{kindLabels[node.kind]}</span>
+                          <span>
+                            {kindLabels[node.kind]}
+                            {node.lifecycle ? ` · ${lifecycleLabels[node.lifecycle]}` : ""}
+                          </span>
                           <strong>{node.label}</strong>
                         </button>
                         <p>{node.summary}</p>
+                        {node.agentConfidence && (
+                          <small>
+                            근거 신뢰도 {confidenceLabels[node.agentConfidence.level]} · {Math.round(node.agentConfidence.score * 100)}%
+                          </small>
+                        )}
                         <small>{relationshipSummary(node, relationships, graph.nodes)}</small>
                       </li>
                     );
@@ -420,16 +469,21 @@ function KnowledgeMap({ map, result, onOpenEvidence }: KnowledgeMapProps) {
                             }}
                             type="button"
                             tabIndex={node.id === rovingId ? 0 : -1}
-                            aria-label={`${kindLabels[node.kind]} 생각: ${node.label}`}
+                            aria-label={thoughtAccessibleName(node)}
                             aria-pressed={selected}
                             aria-controls={inspectorId}
                             aria-describedby={graphHelpId}
+                            data-lifecycle={node.lifecycle}
+                            data-confidence={node.agentConfidence?.level}
                             data-testid={`brain-node-${node.id}`}
                             onClick={() => selectNode(node.id)}
                             onFocus={() => setFocusId(node.id)}
                             onKeyDown={(event) => handleNodeKeyDown(event, node.id)}
                           >
-                            <span>{kindLabels[node.kind]}</span>
+                            <span>
+                              {kindLabels[node.kind]}
+                              {node.lifecycle ? ` · ${lifecycleLabels[node.lifecycle]}` : ""}
+                            </span>
                             <strong>{clipLabel(node.label)}</strong>
                           </button>
                         );
@@ -479,6 +533,38 @@ function BrainInspector({
           <div className={`brain-inspector-type brain-kind-${node.kind}`}>{kindLabels[node.kind]}</div>
           <h3>{node.label}</h3>
           <p>{node.summary}</p>
+          {(node.lifecycle || node.agentConfidence || node.observedAt) && (
+            <dl className="brain-inspector-meta">
+              {node.lifecycle && (
+                <>
+                  <dt>변화 상태</dt>
+                  <dd data-lifecycle={node.lifecycle}>{lifecycleLabels[node.lifecycle]}</dd>
+                </>
+              )}
+              {node.observedAt && (
+                <>
+                  <dt>관찰 시각</dt>
+                  <dd><time dateTime={node.observedAt}>{formatObservedAt(node.observedAt)}</time></dd>
+                </>
+              )}
+              {node.agentConfidence && (
+                <>
+                  <dt>근거 신뢰도</dt>
+                  <dd>
+                    {confidenceLabels[node.agentConfidence.level]} · {Math.round(node.agentConfidence.score * 100)}%
+                  </dd>
+                </>
+              )}
+            </dl>
+          )}
+          {node.agentConfidence && (
+            <p className="brain-confidence-rationale">{node.agentConfidence.rationale}</p>
+          )}
+          {(node.contradictionIds?.length ?? 0) > 0 && (
+            <p className="brain-contradiction-note" role="note">
+              모순 후보 {node.contradictionIds?.length}건과 연결되어 있습니다. 확정 전에 원문 근거를 확인하세요.
+            </p>
+          )}
           <div className="brain-related">
             <strong>직접 연결된 생각 {edges.length}개</strong>
             {edges.length > 0 ? (
@@ -621,6 +707,37 @@ function relationshipSummary(node: ThoughtNode, edges: ThoughtEdge[], nodes: Tho
     const related = nodes.find((item) => item.id === relatedId);
     return `${edge.relation} · ${related?.label ?? "연결된 생각"}`;
   }).join(" / ");
+}
+
+function countLifecycle(nodes: ThoughtNode[]) {
+  const counts = { new: 0, changed: 0, stable: 0, resolved: 0 };
+  nodes.forEach((node) => {
+    if (node.lifecycle) counts[node.lifecycle] += 1;
+  });
+  return counts;
+}
+
+function thoughtAccessibleName(node: ThoughtNode) {
+  const metadata = [
+    node.lifecycle ? `상태 ${lifecycleLabels[node.lifecycle]}` : "",
+    node.agentConfidence
+      ? `근거 신뢰도 ${confidenceLabels[node.agentConfidence.level]} ${Math.round(node.agentConfidence.score * 100)}퍼센트`
+      : "",
+    (node.contradictionIds?.length ?? 0) > 0 ? `모순 후보 ${node.contradictionIds?.length}건` : "",
+  ].filter(Boolean).join(", ");
+  return `${kindLabels[node.kind]} 생각: ${node.label}${metadata ? `, ${metadata}` : ""}`;
+}
+
+function formatObservedAt(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("ko-KR", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
 }
 
 export default KnowledgeMap;

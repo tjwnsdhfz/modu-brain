@@ -275,6 +275,7 @@ describe("ProjectPage", () => {
     await user.click(screen.getByRole("button", { name: "파싱하고 가져오기" }));
 
     expect(api.importContext).toHaveBeenCalledWith("access", project.id, {
+      parserVersion: "teams@1",
       provider: "teams",
       title: "Teams 제품 회의",
       text: '[{"body":{"content":"이번 주에 사용자 테스트를 진행합니다."}}]',

@@ -1,22 +1,34 @@
 import {
   useId,
+  useMemo,
   useRef,
   useState,
   type ChangeEvent,
   type FormEvent,
 } from "react";
+import {
+  CONTEXT_IMPORT_PARSER_VERSIONS,
+  type ContextImportProvider,
+} from "../utils/contextImportContracts";
 import styles from "./ContextImportPanel.module.css";
 
-export type ContextImportProvider = "kakaotalk" | "teams" | "notion" | "paste";
+export type { ContextImportProvider } from "../utils/contextImportContracts";
 
 export type ContextImportInput = {
   provider: ContextImportProvider;
   title?: string;
   text: string;
+  parserVersion?: string;
+};
+
+export type ContextImportOutcome = {
+  duplicate?: boolean;
+  participantCount?: number;
+  segmentCount?: number;
 };
 
 export type ContextImportPanelProps = {
-  onImport: (input: ContextImportInput) => Promise<void>;
+  onImport: (input: ContextImportInput) => Promise<void | ContextImportOutcome>;
   mode?: "project" | "ephemeral";
   initialInput?: ContextImportInput;
   textareaId?: string;
@@ -25,6 +37,13 @@ export type ContextImportPanelProps = {
 export const CONTEXT_IMPORT_FILE_LIMIT_BYTES = 256 * 1024;
 
 type ImportStatus = "idle" | "reading" | "pending" | "success" | "error";
+
+type ImportPreview = {
+  itemCount: number;
+  participantNames: string[];
+  parserVersion: string;
+  warning?: string;
+};
 
 const providerOptions: Array<{
   id: ContextImportProvider;
@@ -132,6 +151,7 @@ function ContextImportPanel({
   const payloadTooLarge = payloadBytes > CONTEXT_IMPORT_FILE_LIMIT_BYTES;
   const canImport = text.trim().length > 0 && !payloadTooLarge && !busy;
   const selectedProvider = providerOptions.find((option) => option.id === provider) ?? providerOptions[0];
+  const preview = useMemo(() => buildImportPreview(provider, text), [provider, text]);
 
   const clearFeedback = () => {
     if (status !== "reading" && status !== "pending") {
@@ -207,15 +227,23 @@ function ContextImportPanel({
     setMessage("선택한 맥락을 정리해 가져오는 중…");
     try {
       const trimmedTitle = title.trim();
-      await onImport({
+      const outcome = await onImport({
         provider,
         ...(trimmedTitle ? { title: trimmedTitle } : {}),
         text: text.trim(),
+        parserVersion: CONTEXT_IMPORT_PARSER_VERSIONS[provider],
       });
       setStatus("success");
-      setMessage(mode === "ephemeral"
-        ? "맥락을 정리해 분석했습니다. 이 기록은 프로젝트에 저장되지 않습니다."
-        : "맥락을 가져왔습니다. 이제 다른 기록과 함께 분석할 수 있습니다.");
+      if (mode === "ephemeral") {
+        setMessage("맥락을 정리해 분석했습니다. 이 기록은 프로젝트에 저장되지 않습니다.");
+      } else if (outcome?.duplicate) {
+        setMessage("이미 가져온 기록과 같아 중복 저장하지 않았습니다. 기존 기록을 선택했습니다.");
+      } else {
+        const segmentSummary = outcome?.segmentCount
+          ? ` 맥락 ${outcome.segmentCount.toLocaleString("ko-KR")}개를 확인했습니다.`
+          : "";
+        setMessage(`맥락을 가져왔습니다.${segmentSummary} 이제 다른 기록과 함께 분석할 수 있습니다.`);
+      }
     } catch (error) {
       setStatus("error");
       setMessage(error instanceof Error && error.message
@@ -251,6 +279,14 @@ function ContextImportPanel({
       </div>
 
       <form className={styles.form} onSubmit={submitImport}>
+        <ol className={styles.steps} aria-label="가져오기 단계">
+          <li className={styles.completedStep}><span>1</span> 형식 선택</li>
+          <li className={text.trim() ? styles.activeStep : ""} aria-current={text.trim() ? "step" : undefined}>
+            <span>2</span> 내용 확인
+          </li>
+          <li className={status === "success" ? styles.completedStep : ""}><span>3</span> 저장·분석</li>
+        </ol>
+
         <fieldset className={styles.providerFieldset} disabled={busy}>
           <legend>가져올 곳</legend>
           <div className={styles.providerGrid}>
@@ -315,6 +351,36 @@ function ContextImportPanel({
             {fileName ? ` · ${selectedProvider.label}로 확인: ${fileName}` : ""}
           </small>
         </div>
+
+        {text.trim() && (
+          <section className={styles.preview} aria-labelledby={`${textId}-preview-heading`} aria-live="polite">
+            <div className={styles.previewHeading}>
+              <div>
+                <p>Import preview</p>
+                <h3 id={`${textId}-preview-heading`}>가져오기 전 확인</h3>
+              </div>
+              <span>{preview.parserVersion}</span>
+            </div>
+            <dl className={styles.previewStats}>
+              <div>
+                <dt>해석 형식</dt>
+                <dd>{selectedProvider.label}</dd>
+              </div>
+              <div>
+                <dt>예상 맥락</dt>
+                <dd>{preview.itemCount.toLocaleString("ko-KR")}개</dd>
+              </div>
+              <div>
+                <dt>확인된 참여자</dt>
+                <dd>{preview.participantNames.length > 0
+                  ? preview.participantNames.slice(0, 3).join(", ")
+                  : "저장 후 분석"}</dd>
+              </div>
+            </dl>
+            {preview.warning && <p className={styles.previewWarning}>{preview.warning}</p>}
+            <p className={styles.previewExcerpt}>{previewExcerpt(text)}</p>
+          </section>
+        )}
 
         <div className={styles.field}>
           <label htmlFor={textId}>{provider === "paste" ? "회의 맥락 붙여넣기" : "가져올 내용 확인"}</label>
@@ -431,6 +497,93 @@ function detectContextProvider(fileName: string, value: string): ContextImportPr
     /"body"\s*:\s*\{[^}]*"content"/.test(normalized)
   ) return "teams";
   return null;
+}
+
+function buildImportPreview(provider: ContextImportProvider, value: string): ImportPreview {
+  const text = removeByteOrderMark(value).trim();
+  const parserVersion = CONTEXT_IMPORT_PARSER_VERSIONS[provider];
+  if (!text) return { itemCount: 0, participantNames: [], parserVersion };
+
+  if (provider === "paste") {
+    return {
+      itemCount: Math.max(1, text.split(/\n\s*\n|\n(?=(?:결정|질문|할 일|TODO)\s*[:：])/u).filter(Boolean).length),
+      participantNames: [],
+      parserVersion,
+    };
+  }
+
+  if (provider === "kakaotalk") {
+    const participants = new Set<string>();
+    let itemCount = 0;
+    for (const line of text.split(/\r?\n/u)) {
+      const bracketMatch = line.match(/^\[([^\]]+)\]\s*\[(?:오전|오후)\s*\d{1,2}:\d{2}\]/u);
+      const inlineMatch = line.match(/^\d{4}년\s*\d{1,2}월\s*\d{1,2}일[^,]*,\s*([^:：]+)\s*[:：]/u);
+      const participant = bracketMatch?.[1] ?? inlineMatch?.[1];
+      if (participant) {
+        participants.add(participant.trim());
+        itemCount += 1;
+      }
+    }
+    return {
+      itemCount: itemCount || Math.max(1, text.split(/\r?\n/u).filter(Boolean).length),
+      participantNames: [...participants],
+      parserVersion,
+      ...(itemCount === 0 ? { warning: "대화 시간 형식을 찾지 못해 줄 단위로 미리 봅니다. 저장 시 원문은 유지됩니다." } : {}),
+    };
+  }
+
+  try {
+    const payload = JSON.parse(text) as unknown;
+    const records = previewRecords(payload, provider);
+    const participants = provider === "teams"
+      ? records
+          .map((record) => participantFromRecord(record))
+          .filter((name): name is string => Boolean(name))
+      : [];
+    return {
+      itemCount: Math.max(1, records.length),
+      participantNames: [...new Set(participants)],
+      parserVersion,
+      ...(records.length === 0 ? { warning: "일반 JSON으로 확인했습니다. 지원 필드를 찾지 못하면 저장 단계에서 오류를 안내합니다." } : {}),
+    };
+  } catch {
+    return {
+      itemCount: 0,
+      participantNames: [],
+      parserVersion,
+      warning: "JSON 문법을 확인해 주세요. 괄호나 따옴표가 닫히지 않은 경우 저장할 수 없습니다.",
+    };
+  }
+}
+
+function previewRecords(payload: unknown, provider: ContextImportProvider): Array<Record<string, unknown>> {
+  if (Array.isArray(payload)) return payload.filter(isPreviewRecord);
+  if (!isPreviewRecord(payload)) return [];
+  const candidates = provider === "teams"
+    ? [payload.value, payload.messages, payload.items]
+    : [payload.blocks, payload.results, isPreviewRecord(payload.page) ? payload.page.blocks : undefined];
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) return candidate.filter(isPreviewRecord);
+  }
+  return [payload];
+}
+
+function participantFromRecord(record: Record<string, unknown>) {
+  const from = isPreviewRecord(record.from) ? record.from : undefined;
+  const fromUser = from && isPreviewRecord(from.user) ? from.user : undefined;
+  const sender = isPreviewRecord(record.sender) ? record.sender : undefined;
+  const user = isPreviewRecord(record.user) ? record.user : undefined;
+  const value = fromUser?.displayName ?? from?.displayName ?? sender?.displayName ?? user?.displayName ?? record.author;
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function isPreviewRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function previewExcerpt(value: string) {
+  const text = removeByteOrderMark(value).replace(/\s+/gu, " ").trim();
+  return text.length > 220 ? `${text.slice(0, 220)}…` : text;
 }
 
 function readFileText(file: File) {

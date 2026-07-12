@@ -17,6 +17,59 @@ const runAnnotationSelect =
   "id,analysis_run_id,annotation_type,target_type,target_id,body,created_at";
 const shareSelect = "id,analysis_run_id,expires_at,revoked_at,created_at";
 
+async function importSourceContext(client, userId, projectId, values) {
+  const result = single(
+    await client.request("rpc/app_import_source_context", {
+      method: "POST",
+      body: {
+        p_user_id: userId,
+        p_project_id: projectId,
+        p_kind: values.kind,
+        p_title: values.title,
+        p_content: values.content,
+        p_provider: values.provider,
+        p_external_id: values.externalId || null,
+        p_occurred_at: values.occurredAt,
+        p_participants: values.participants || [],
+        p_metadata: values.metadata || {},
+        p_segments: values.segments || [],
+      },
+    }),
+  );
+  if (!result?.source) {
+    throw new ApiError(503, "DATABASE_UNAVAILABLE", "가져오기 결과를 저장하지 못했습니다.");
+  }
+  return result;
+}
+
+async function createRunAnnotation(client, runId, userId, values) {
+  const result = single(
+    await client.request("rpc/app_create_analysis_run_annotation", {
+      method: "POST",
+      body: {
+        p_user_id: userId,
+        p_analysis_run_id: runId,
+        p_idempotency_key: values.idempotencyKey,
+        p_annotation_type: values.annotationType,
+        p_target_type: values.targetType,
+        p_target_id: values.targetId,
+        p_body: values.body,
+      },
+    }),
+  );
+  if (!result?.annotation) {
+    throw new ApiError(
+      503,
+      "DATABASE_UNAVAILABLE",
+      "The annotation could not be persisted.",
+    );
+  }
+  return {
+    reused: result.outcome === "reused",
+    annotation: result.annotation,
+  };
+}
+
 export function createModuBrainRepository(client) {
   return {
     async ready() {
@@ -49,29 +102,6 @@ export function createModuBrainRepository(client) {
         page,
         sourceCursorFilter(page.cursor),
       );
-    },
-    async importSourceContext(projectId, values) {
-      const result = single(
-        await client.request("rpc/import_source_context", {
-          method: "POST",
-          body: {
-            p_project_id: projectId,
-            p_kind: values.kind,
-            p_title: values.title,
-            p_content: values.content,
-            p_provider: values.provider,
-            p_external_id: values.externalId || null,
-            p_occurred_at: values.occurredAt,
-            p_participants: values.participants || [],
-            p_metadata: values.metadata || {},
-            p_segments: values.segments || [],
-          },
-        }),
-      );
-      if (!result?.source) {
-        throw new ApiError(503, "DATABASE_UNAVAILABLE", "가져오기 결과를 저장하지 못했습니다.");
-      }
-      return result;
     },
     async getSource(sourceId) {
       return requireSingle(
@@ -146,33 +176,6 @@ export function createModuBrainRepository(client) {
         `analysis_run_annotations?analysis_run_id=eq.${encode(runId)}&select=${runAnnotationSelect}&order=created_at.desc`,
       );
     },
-    async createRunAnnotation(runId, values) {
-      const result = single(
-        await client.request("rpc/create_analysis_run_annotation", {
-          method: "POST",
-          body: {
-            p_analysis_run_id: runId,
-            p_idempotency_key: values.idempotencyKey,
-            p_annotation_type: values.annotationType,
-            p_target_type: values.targetType,
-            p_target_id: values.targetId,
-            p_body: values.body,
-          },
-        }),
-      );
-      if (!result?.annotation) {
-        throw new ApiError(
-          503,
-          "DATABASE_UNAVAILABLE",
-          "The annotation could not be persisted.",
-        );
-      }
-      return {
-        reused: result.outcome === "reused",
-        annotation: result.annotation,
-      };
-    },
-
     async listShareLinks(runId) {
       await this.getRun(runId);
       return client.request(
@@ -184,6 +187,12 @@ export function createModuBrainRepository(client) {
 
 export function createModuBrainServiceRepository(client) {
   return {
+    async importSourceContext(userId, projectId, values) {
+      return importSourceContext(client, userId, projectId, values);
+    },
+    async createRunAnnotation(runId, userId, values) {
+      return createRunAnnotation(client, runId, userId, values);
+    },
     async createProject(userId, values) {
       return requireSingle(
         await client.request("rpc/app_create_project", {

@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { createApiV1Handler } from "./apiV1.mjs";
 import {
   handleContextAnalysisRequest,
+  PUBLIC_CONTEXT_IMPORT_PATH,
   runPublicRateLimitMaintenance,
 } from "./contextAnalysisApi.mjs";
 import { createCachedReadinessProbe, setApiHeaders } from "./httpJson.mjs";
@@ -231,7 +232,11 @@ export function createModuBrainServer(options = {}) {
     }
 
     try {
-      if (["/api/context-analysis", "/api/context-analysis/import"].includes(pathname)) {
+      if ([
+        "/api/context-analysis",
+        "/api/context-analysis/import",
+        PUBLIC_CONTEXT_IMPORT_PATH,
+      ].includes(pathname)) {
         await handleContextAnalysisRequest(req, res, {
           ...(options.apiOptions || {}),
           production: options.apiOptions?.production ?? production,

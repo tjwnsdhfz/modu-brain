@@ -51,7 +51,7 @@
   padding: 0 11px;
   background: var(--color-success-bg);
   color: var(--color-success);
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 800;
 }
 
@@ -59,6 +59,52 @@
   display: grid;
   gap: 20px;
   margin-top: 22px;
+}
+
+.steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.steps li {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 2px solid var(--color-border);
+  color: var(--color-text-muted);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.steps li span {
+  display: inline-flex;
+  width: 26px;
+  height: 26px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+.steps .activeStep,
+.steps .completedStep {
+  border-bottom-color: var(--color-primary);
+  color: var(--color-text);
+}
+
+.steps .activeStep span,
+.steps .completedStep span {
+  border-color: var(--color-primary);
+  background: var(--color-primary-subtle);
+  color: var(--color-primary);
 }
 
 .providerFieldset {
@@ -145,7 +191,7 @@
   padding: 4px 7px;
   background: var(--color-primary-soft);
   color: var(--color-link);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
 }
 
@@ -157,7 +203,7 @@
 .field > label small {
   margin-left: 5px;
   color: var(--color-text-muted);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
 }
 
@@ -238,6 +284,96 @@
 .counterError {
   color: var(--color-danger);
   font-weight: 700;
+}
+
+.preview {
+  display: grid;
+  gap: 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  padding: 16px;
+  background: var(--color-surface-subtle);
+}
+
+.previewHeading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.previewHeading p {
+  margin: 0 0 4px;
+  color: var(--color-primary);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.previewHeading h3 {
+  margin: 0;
+  color: var(--color-text);
+  font-size: 18px;
+  line-height: 1.35;
+}
+
+.previewHeading > span {
+  flex: 0 0 auto;
+  border: 1px solid var(--color-primary-border);
+  border-radius: var(--radius-pill);
+  padding: 5px 9px;
+  background: var(--color-primary-subtle);
+  color: var(--color-link);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.previewStats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.previewStats > div {
+  min-width: 0;
+  border-left: 2px solid var(--color-border-strong);
+  padding-left: 10px;
+}
+
+.previewStats dt {
+  color: var(--color-text-muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.previewStats dd {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--color-text-body);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.previewWarning,
+.previewExcerpt {
+  margin: 0;
+  border-radius: var(--radius-input);
+  padding: 10px 12px;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.previewWarning {
+  border: 1px solid var(--color-warning-border);
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+  font-weight: 650;
+}
+
+.previewExcerpt {
+  background: var(--color-surface);
+  color: var(--color-text-muted);
 }
 
 .privacyNote {
@@ -381,6 +517,11 @@
   .headingRow,
   .actions {
     display: grid;
+  }
+
+  .steps,
+  .previewStats {
+    grid-template-columns: 1fr;
   }
 
   .noLinkBadge {

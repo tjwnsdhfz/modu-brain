@@ -1,6 +1,7 @@
 services:
   - type: web
     name: modu-brain-tjwnsdhfz
+    repo: https://github.com/tjwnsdhfz/modu-brain
     runtime: node
     plan: free
     region: singapore

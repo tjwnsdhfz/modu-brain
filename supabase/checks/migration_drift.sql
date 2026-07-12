@@ -18,7 +18,9 @@ with expected(version, name) as (
     ('202607110004', 'external_context_import_hardening'),
     ('20260711113201', 'analysis_workflow_events_and_annotations'),
     ('20260711185902', 'operations_hardening_expand'),
-    ('20260711191125', 'authenticated_mutation_boundary')
+    ('20260711191125', 'authenticated_mutation_boundary'),
+    ('20260712031058', 'app_import_and_annotation_boundary'),
+    ('20260712031100', 'revoke_authenticated_compatibility_rpcs')
 )
 select e.version,
        e.name as expected_name,
@@ -36,7 +38,9 @@ with expected(version) as (
     ('202607110004'),
     ('20260711113201'),
     ('20260711185902'),
-    ('20260711191125')
+    ('20260711191125'),
+    ('20260712031058'),
+    ('20260712031100')
 )
 select m.version as unexpected_version, m.name as unexpected_name
 from supabase_migrations.schema_migrations m
@@ -85,9 +89,9 @@ select
     'authenticated',
     'public.import_source_context(uuid,text,text,text,text,text,timestamptz,jsonb,jsonb,jsonb)',
     'EXECUTE'
-  ) as compatibility_import_executable,
+  ) as revoked_compatibility_import_executable,
   has_function_privilege(
     'authenticated',
     'public.create_analysis_run_annotation(uuid,text,text,text,text,text)',
     'EXECUTE'
-  ) as compatibility_annotation_executable;
+  ) as revoked_compatibility_annotation_executable;

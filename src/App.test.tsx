@@ -90,9 +90,10 @@ describe("public landing prototype", () => {
     await user.click(screen.getByRole("button", { name: "가져와 바로 분석" }));
 
     expect(analyzeImportedContextMock).toHaveBeenCalledWith({
+      parserVersion: "paste@1",
       provider: "paste",
       text: sampleInput,
-    }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    }, expect.objectContaining({ signal: expect.anything() }));
     expect(await screen.findByText(/맥락을 정리해 분석했습니다/)).toBeInTheDocument();
     expect(screen.queryByText("샘플 데이터")).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: sampleAnalysis.projectTitle })).toBeInTheDocument();

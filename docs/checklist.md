@@ -32,7 +32,7 @@
 - [x] 문서 입력 화면 구현
 - [x] 맥락 추출 결과 화면 구현
 - [x] 새 참여자 온보딩 요약 화면 구현
-- [x] `/api/context-analysis` 개발용 API 구현
+- [x] 구형 `/api/context-analysis*`를 `410`으로 종료하고 `/api/v1/public/context-analysis/import`로 전환
 - [x] 입력 검증과 API 오류 응답 구현
 - [x] UI의 `맥락 분석하기` 버튼을 실제 API 호출과 연결
 - [x] 팀원별 관점 에이전트 확장 타입 추가

@@ -1,10 +1,11 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import ContextImportPanel, {
   CONTEXT_IMPORT_FILE_LIMIT_BYTES,
   type ContextImportInput,
 } from "./ContextImportPanel";
+import { CONTEXT_IMPORT_PARSER_VERSIONS } from "../utils/contextImportContracts";
 
 describe("ContextImportPanel", () => {
   it("prefills the single public composer with a deterministic demo payload", async () => {
@@ -27,6 +28,7 @@ describe("ContextImportPanel", () => {
       provider: "paste",
       title: "공개 데모",
       text: "샘플 회의 맥락",
+      parserVersion: CONTEXT_IMPORT_PARSER_VERSIONS.paste,
     });
   });
 
@@ -51,6 +53,7 @@ describe("ContextImportPanel", () => {
       provider: "paste",
       title: "주간 제품 회의",
       text: "결정: 금요일까지 시안을 검토한다.",
+      parserVersion: CONTEXT_IMPORT_PARSER_VERSIONS.paste,
     });
     expect(await screen.findByRole("status")).toHaveTextContent("맥락을 가져왔습니다.");
   });
@@ -97,7 +100,32 @@ describe("ContextImportPanel", () => {
       provider: "kakaotalk",
       title: "기획회의",
       text: "2026-07-11, 서준 : 안건을 확정합니다.",
+      parserVersion: CONTEXT_IMPORT_PARSER_VERSIONS.kakaotalk,
     });
+  });
+
+  it("previews the detected parser, item count, and participants before import", async () => {
+    const user = userEvent.setup();
+    render(<ContextImportPanel onImport={vi.fn().mockResolvedValue(undefined)} />);
+
+    await user.click(screen.getByRole("radio", { name: /카카오톡 내보내기/ }));
+    fireEvent.change(screen.getByLabelText("가져올 내용 확인"), {
+      target: { value: "[민지] [오후 2:01] 첫 번째 결정\n[서준] [오후 2:03] 다음 질문" },
+    });
+
+    expect(screen.getByRole("heading", { name: "가져오기 전 확인" })).toBeInTheDocument();
+    expect(screen.getByText(CONTEXT_IMPORT_PARSER_VERSIONS.kakaotalk)).toBeInTheDocument();
+    expect(screen.getByText("민지, 서준")).toBeInTheDocument();
+    expect(screen.getByText("2개")).toBeInTheDocument();
+  });
+
+  it("explains when a project import resolves to an existing duplicate", async () => {
+    const user = userEvent.setup();
+    render(<ContextImportPanel onImport={vi.fn().mockResolvedValue({ duplicate: true })} />);
+    await user.type(screen.getByLabelText("회의 맥락 붙여넣기"), "이미 저장한 회의 맥락입니다.");
+    await user.click(screen.getByRole("button", { name: "파싱하고 가져오기" }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent("중복 저장하지 않았습니다");
   });
 
   it("detects a Notion JSON file without requiring a provider choice", async () => {

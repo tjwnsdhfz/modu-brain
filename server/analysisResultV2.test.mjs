@@ -1,7 +1,11 @@
 // @vitest-environment node
 
 import { describe, expect, it } from "vitest";
-import { buildContextAnalysisResultV2, validateEvidenceReferences } from "./analysisResultV2.mjs";
+import {
+  assessEvidenceGrounding,
+  buildContextAnalysisResultV2,
+  validateEvidenceReferences,
+} from "./analysisResultV2.mjs";
 
 const sourceId = "33333333-3333-4333-8333-333333333333";
 const snapshots = [
@@ -31,7 +35,28 @@ describe("analysis result v2 evidence", () => {
     expect(result.knowledgeMap.nodes[0].evidence[0].sourceRecordId).toBe(sourceId);
     expect(result.participantAgents.views[0].evidenceRefs[0].quote).toContain("민지는");
     expect(result.participants[0].evidence[0].quote).toContain("민지는");
+    expect(result.decisions[0].agentConfidence).toMatchObject({
+      level: "medium",
+      evidenceCount: 1,
+      sourceCount: 1,
+    });
+    expect(result.decisions[0].agentConfidence.rationale).toContain("정확히 일치하는 인용문");
     expect(validateEvidenceReferences(result, snapshots)).toBe(true);
+  });
+
+  it("scores grounding deterministically from exact evidence coverage", () => {
+    const evidence = [
+      { sourceRecordId: "source-a", sourceTitle: "A", quote: "충분히 긴 첫 번째 원문 인용문으로 판단 근거를 확인합니다." },
+      { sourceRecordId: "source-b", sourceTitle: "B", quote: "두 번째 독립 원문에서도 같은 맥락의 근거를 확인합니다." },
+    ];
+
+    expect(assessEvidenceGrounding(evidence)).toEqual(assessEvidenceGrounding(evidence));
+    expect(assessEvidenceGrounding(evidence)).toMatchObject({
+      level: "high",
+      evidenceCount: 2,
+      sourceCount: 2,
+    });
+    expect(assessEvidenceGrounding([])).toMatchObject({ score: 0.2, level: "low" });
   });
 
   it("does not attach an unrelated first sentence when no hint exists in the source", () => {

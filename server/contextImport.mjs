@@ -4,6 +4,12 @@ import { ApiError } from "./apiErrors.mjs";
 
 export const CONTEXT_IMPORT_MAX_CHARACTERS = 100_000;
 export const CONTEXT_IMPORT_MAX_SEGMENTS = 2_000;
+export const CONTEXT_IMPORT_PARSER_VERSIONS = Object.freeze({
+  paste: "paste@1",
+  kakaotalk: "kakaotalk@1",
+  teams: "teams@1",
+  notion: "notion@1",
+});
 
 const SUPPORTED_PROVIDERS = new Set(["paste", "kakaotalk", "teams", "notion"]);
 const PROVIDER_DEFAULTS = {
@@ -36,6 +42,7 @@ export function normalizeContextImport(input) {
   validateOptionalStringField(input, "externalId");
   validateOptionalStringField(input, "occurredAt");
   validateOptionalStringField(input, "sourceUrl");
+  validateOptionalStringField(input, "parserVersion");
 
   let rawText = readInputText(input);
   let payload = readJsonPayload(input.payload);
@@ -620,7 +627,10 @@ function finalizeImport(parsed, input, provider) {
     ),
     content,
     segments,
-    metadata: isRecord(parsed.metadata) ? parsed.metadata : {},
+    metadata: {
+      ...(isRecord(parsed.metadata) ? parsed.metadata : {}),
+      parserVersion: optionalString(input.parserVersion) || CONTEXT_IMPORT_PARSER_VERSIONS[provider],
+    },
   };
 }
 

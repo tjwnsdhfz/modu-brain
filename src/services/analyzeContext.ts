@@ -34,53 +34,7 @@ export type PublicImportedContextAnalysis = {
   result: ContextAnalysisResult;
 };
 
-export async function analyzeContext(
-  projectTitle: string,
-  inputText: string,
-  options: { signal?: AbortSignal } = {},
-): Promise<ContextAnalysisResult> {
-  let response: Response;
-
-  try {
-    response = await fetch("/api/context-analysis", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        projectTitle,
-        rawText: inputText,
-      }),
-      signal: options.signal,
-    });
-  } catch (error) {
-    if (options.signal?.aborted) throw error;
-
-    throw new ContextAnalysisRequestError(
-      "분석 API에 연결할 수 없습니다. 개발 서버에서 /api/context-analysis가 실행 중인지 확인하세요.",
-    );
-  }
-
-  const payload = (await parseJson(response)) as ContextAnalysisResult | ContextAnalysisErrorPayload;
-
-  if (!response.ok) {
-    const errorPayload = payload as ContextAnalysisErrorPayload;
-    throw new ContextAnalysisRequestError(
-      errorPayload.error?.message || "맥락 분석 요청에 실패했습니다.",
-      response.status,
-      errorPayload.error?.code || "ANALYSIS_REQUEST_FAILED",
-      errorPayload.error?.details || null,
-    );
-  }
-
-  if (!isContextAnalysisResult(payload)) {
-    throw new ContextAnalysisRequestError(
-      "분석 API 응답 형식이 올바르지 않습니다.",
-      response.status,
-      "INVALID_ANALYSIS_RESPONSE",
-    );
-  }
-
-  return payload;
-}
+export const PUBLIC_CONTEXT_IMPORT_PATH = "/api/v1/public/context-analysis/import";
 
 export async function analyzeImportedContext(
   input: ImportContextInput,
@@ -89,7 +43,7 @@ export async function analyzeImportedContext(
   let response: Response;
 
   try {
-    response = await fetch("/api/context-analysis/import", {
+    response = await fetch(PUBLIC_CONTEXT_IMPORT_PATH, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(input),

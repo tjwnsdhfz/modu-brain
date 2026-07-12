@@ -1,7 +1,7 @@
 // @ts-expect-error The existing API is intentionally shared from JavaScript modules.
 import { createApiV1Handler } from "../server/apiV1.mjs";
-// @ts-expect-error The legacy compatibility handler is a JavaScript module.
-import { handleContextAnalysisRequest } from "../server/contextAnalysisApi.mjs";
+// @ts-expect-error The public import handler is intentionally shared from a JavaScript module.
+import { handleContextAnalysisRequest, PUBLIC_CONTEXT_IMPORT_PATH } from "../server/contextAnalysisApi.mjs";
 // @ts-expect-error Runtime helpers are intentionally shared from JavaScript modules.
 import { createCachedReadinessProbe, setApiHeaders } from "../server/httpJson.mjs";
 // @ts-expect-error Runtime repositories are intentionally shared from JavaScript modules.
@@ -98,7 +98,11 @@ async function dispatchWorkerRequest(
   runtime: ReturnType<typeof createWorkerRuntime>,
   trace: { requestId: string; cfRay: string | null; rndrId: string | null; runtime: string },
 ) {
-  if (["/api/context-analysis", "/api/context-analysis/import"].includes(url.pathname)) {
+  if ([
+    "/api/context-analysis",
+    "/api/context-analysis/import",
+    PUBLIC_CONTEXT_IMPORT_PATH,
+  ].includes(url.pathname)) {
     return runNodeHandler(request, async (nodeRequest, nodeResponse) => {
       await handleContextAnalysisRequest(nodeRequest, nodeResponse, {
         production: true,

@@ -10,27 +10,25 @@ describe("platformApi", () => {
       .fn<typeof fetch>()
       .mockResolvedValue(response({ data: { openaiEnabled: false } }));
     vi.stubGlobal("fetch", fetchMock);
-    await expect(platformApi.getCapabilities("access-token")).resolves.toEqual({
+    await expect(platformApi.getCapabilities(COOKIE_SESSION_SENTINEL)).resolves.toEqual({
       openaiEnabled: false,
     });
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/v1/capabilities",
-      expect.objectContaining({
-        headers: expect.objectContaining({ Authorization: "Bearer access-token" }),
-      }),
-    );
+    const [, init] = fetchMock.mock.calls[0];
+    expect(init).toMatchObject({ credentials: "same-origin" });
+    expect(init?.headers).not.toHaveProperty("Authorization");
   });
 
-  it("unwraps the canonical data envelope and sends the Supabase bearer token", async () => {
+  it("unwraps the canonical data envelope using only the HttpOnly cookie session", async () => {
     const projects = [{ id: "p1", title: "프로젝트" }];
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(response({ data: projects }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(platformApi.listProjects("access-token")).resolves.toEqual(projects);
+    await expect(platformApi.listProjects(COOKIE_SESSION_SENTINEL)).resolves.toEqual(projects);
     expect(fetchMock).toHaveBeenCalledWith("/api/v1/projects", expect.objectContaining({
       method: "GET",
-      headers: expect.objectContaining({ Authorization: "Bearer access-token" }),
+      credentials: "same-origin",
     }));
+    expect(fetchMock.mock.calls[0][1]?.headers).not.toHaveProperty("Authorization");
   });
 
   it("uses same-origin cookies for the BFF sentinel without an Authorization header", async () => {
@@ -111,13 +109,13 @@ describe("platformApi", () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(response({ data: segments }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(platformApi.listSourceSegments("access-token", "source-1")).resolves.toEqual(
+    await expect(platformApi.listSourceSegments(COOKIE_SESSION_SENTINEL, "source-1")).resolves.toEqual(
       segments,
     );
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/v1/sources/source-1/segments?limit=50",
       expect.objectContaining({
-        headers: expect.objectContaining({ Authorization: "Bearer access-token" }),
+        credentials: "same-origin",
       }),
     );
   });
@@ -127,11 +125,11 @@ describe("platformApi", () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(response({ data: events }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(platformApi.listAnalysisRunStepEvents("access-token", "run-1")).resolves.toEqual(events);
+    await expect(platformApi.listAnalysisRunStepEvents(COOKIE_SESSION_SENTINEL, "run-1")).resolves.toEqual(events);
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/v1/analysis-runs/run-1/step-events",
       expect.objectContaining({
-        headers: expect.objectContaining({ Authorization: "Bearer access-token" }),
+        credentials: "same-origin",
       }),
     );
   });
@@ -142,7 +140,7 @@ describe("platformApi", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await platformApi.createAnalysisRunAnnotation(
-      "access-token",
+      COOKIE_SESSION_SENTINEL,
       "run-1",
       {
         annotationType: "correction",
@@ -157,9 +155,9 @@ describe("platformApi", () => {
     expect(url).toBe("/api/v1/analysis-runs/run-1/annotations");
     expect(init).toMatchObject({ method: "POST" });
     expect(init?.headers).toEqual(expect.objectContaining({
-      Authorization: "Bearer access-token",
       "Idempotency-Key": "annotation-idempotency-key",
     }));
+    expect(init?.headers).not.toHaveProperty("Authorization");
     expect(JSON.parse(String(init?.body))).toMatchObject({
       annotationType: "correction",
       targetType: "decision",

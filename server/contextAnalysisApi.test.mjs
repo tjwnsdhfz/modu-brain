@@ -4,6 +4,8 @@ import { createServer } from "node:http";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { handleContextAnalysisRequest } from "./contextAnalysisApi.mjs";
 
+const PUBLIC_IMPORT_PATH = "/api/v1/public/context-analysis/import";
+
 const validRawText = `민지는 입력 흐름을 단순하게 만들자고 제안했다. 서준은 결정 배경과 질문을 함께 보여줘야 한다고 말했다.
 현우는 지식맵이 복잡해질 수 있다고 우려했다. 팀은 직접 입력 방식으로 MVP를 시작하기로 결정했다.
 다음 회의에서는 개인정보 안내와 노드 수를 어떻게 정할지 검토하기로 했다.`;
@@ -29,10 +31,11 @@ afterAll(async () => {
 });
 
 describe("context analysis HTTP API", () => {
-  it("returns a structured local analysis with no-store JSON headers", async () => {
-    const response = await request({
-      method: "POST",
-      body: JSON.stringify({ projectTitle: "API 검증", rawText: validRawText }),
+  it("returns a structured local analysis from the versioned public import API", async () => {
+    const response = await requestImport({
+      provider: "paste",
+      title: "API 검증",
+      text: validRawText,
     });
     const body = await response.json();
 
@@ -44,11 +47,26 @@ describe("context analysis HTTP API", () => {
     expect(response.headers.get("strict-transport-security")).toContain("max-age=31536000");
     expect(response.headers.get("content-security-policy")).toContain("default-src 'none'");
     expect(response.headers.get("cross-origin-resource-policy")).toBe("same-origin");
-    expect(body).toMatchObject({
+    expect(body.result).toMatchObject({
       projectTitle: "API 검증",
       provider: { mode: "mock", name: "local-heuristic", usedExternalModel: false },
     });
-    expect(body.participantAgents.views.length).toBeGreaterThan(0);
+    expect(body.result.participantAgents.views.length).toBeGreaterThan(0);
+  });
+
+  it("returns 410 with a versioned replacement for both legacy endpoints", async () => {
+    for (const path of ["/api/context-analysis", "/api/context-analysis/import"]) {
+      const response = await fetch(`${baseUrl}${path}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider: "paste", text: validRawText }),
+      });
+      expect(response.status).toBe(410);
+      expect(response.headers.get("link")).toContain("successor-version");
+      await expect(response.json()).resolves.toMatchObject({
+        error: { code: "LEGACY_ENDPOINT_REMOVED" },
+      });
+    }
   });
 
   it("normalizes an account-free context export and analyzes it without persistence", async () => {
@@ -87,7 +105,7 @@ describe("context analysis HTTP API", () => {
     const malformed = await requestImport({ provider: "notion", text: "{not json" });
     await expectError(malformed, 400, "MALFORMED_IMPORT_PAYLOAD");
 
-    const crossOrigin = await fetch(`${baseUrl}/api/context-analysis/import`, {
+    const crossOrigin = await fetch(`${baseUrl}${PUBLIC_IMPORT_PATH}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -97,7 +115,7 @@ describe("context analysis HTTP API", () => {
     });
     await expectError(crossOrigin, 403, "INVALID_ORIGIN");
 
-    const spoofedProxyOrigin = await fetch(`${baseUrl}/api/context-analysis/import`, {
+    const spoofedProxyOrigin = await fetch(`${baseUrl}${PUBLIC_IMPORT_PATH}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -121,7 +139,7 @@ describe("context analysis HTTP API", () => {
     const address = limitedServer.address();
 
     try {
-      const response = await fetch(`http://127.0.0.1:${address.port}/api/context-analysis/import`, {
+      const response = await fetch(`http://127.0.0.1:${address.port}${PUBLIC_IMPORT_PATH}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ provider: "paste", text: validRawText }),
@@ -135,7 +153,7 @@ describe("context analysis HTTP API", () => {
     }
   });
 
-  it("uses one persistent limiter contract for anonymous analysis and imports", async () => {
+  it("uses one persistent limiter contract for public imports", async () => {
     const consumePublicRateLimit = vi.fn().mockResolvedValue(true);
     await withContextServer(
       {
@@ -145,24 +163,24 @@ describe("context analysis HTTP API", () => {
         analysisOptions: { provider: "local-heuristic" },
       },
       async (url) => {
-        const analysis = await fetch(`${url}/api/context-analysis`, {
+        const first = await fetch(`${url}${PUBLIC_IMPORT_PATH}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ projectTitle: "Limiter test", rawText: validRawText }),
+          body: JSON.stringify({ provider: "paste", title: "Limiter test", text: validRawText }),
         });
-        const imported = await fetch(`${url}/api/context-analysis/import`, {
+        const second = await fetch(`${url}${PUBLIC_IMPORT_PATH}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ provider: "paste", text: validRawText }),
         });
-        expect(analysis.status).toBe(200);
-        expect(imported.status).toBe(200);
+        expect(first.status).toBe(200);
+        expect(second.status).toBe(200);
       },
     );
 
     expect(consumePublicRateLimit).toHaveBeenCalledTimes(2);
     expect(consumePublicRateLimit.mock.calls.map(([call]) => call.scope)).toEqual([
-      "public-analysis:hour",
+      "public-import:hour",
       "public-import:hour",
     ]);
     for (const [call] of consumePublicRateLimit.mock.calls) {
@@ -177,17 +195,17 @@ describe("context analysis HTTP API", () => {
     await withContextServer(
       { production: true, rateLimitIdentifierSecret: "test-secret" },
       async (url) => {
-        const response = await fetch(`${url}/api/context-analysis`, {
+        const response = await fetch(`${url}${PUBLIC_IMPORT_PATH}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ projectTitle: "Limiter test", rawText: validRawText }),
+          body: JSON.stringify({ provider: "paste", title: "Limiter test", text: validRawText }),
         });
         await expectError(response, 503, "PUBLIC_RATE_LIMIT_BACKEND_UNAVAILABLE");
       },
     );
   });
 
-  it("rate limits ordinary anonymous analysis with Retry-After", async () => {
+  it("rate limits public imports with Retry-After", async () => {
     await withContextServer(
       {
         production: true,
@@ -195,13 +213,13 @@ describe("context analysis HTTP API", () => {
         consumePublicRateLimit: () => false,
       },
       async (url) => {
-        const response = await fetch(`${url}/api/context-analysis`, {
+        const response = await fetch(`${url}${PUBLIC_IMPORT_PATH}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ projectTitle: "Limiter test", rawText: validRawText }),
+          body: JSON.stringify({ provider: "paste", title: "Limiter test", text: validRawText }),
         });
         expect(response.headers.get("retry-after")).toBe("3600");
-        await expectError(response, 429, "PUBLIC_ANALYSIS_RATE_LIMITED");
+        await expectError(response, 429, "PUBLIC_IMPORT_RATE_LIMITED");
       },
     );
   });
@@ -216,10 +234,10 @@ describe("context analysis HTTP API", () => {
           }),
       },
       async (url) => {
-        const response = await fetch(`${url}/api/context-analysis`, {
+        const response = await fetch(`${url}${PUBLIC_IMPORT_PATH}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ projectTitle: "Deadline test", rawText: validRawText }),
+          body: JSON.stringify({ provider: "paste", title: "Deadline test", text: validRawText }),
         });
         await expectError(response, 504, "ANALYSIS_DEADLINE_EXCEEDED");
       },
@@ -247,7 +265,7 @@ describe("context analysis HTTP API", () => {
   });
 
   it("rejects non-JSON request content types", async () => {
-    const response = await fetch(`${baseUrl}/api/context-analysis`, {
+    const response = await fetch(`${baseUrl}${PUBLIC_IMPORT_PATH}`, {
       method: "POST",
       headers: { "Content-Type": "text/plain" },
       body: "plain text",
@@ -259,18 +277,18 @@ describe("context analysis HTTP API", () => {
   it("accepts 20,000 Korean characters even though UTF-8 exceeds 25KB", async () => {
     const response = await request({
       method: "POST",
-      body: JSON.stringify({ projectTitle: "한글 경계", rawText: "가".repeat(20_000) }),
+      body: JSON.stringify({ provider: "paste", title: "한글 경계", text: "가".repeat(20_000) }),
     });
 
     expect(response.status).toBe(200);
     const body = await response.json();
-    expect(body.summary.sourceLength).toBe(20_000);
+    expect(body.result.summary.sourceLength).toBe(20_000);
   });
 
   it("returns RAW_TEXT_TOO_LONG for 25,001 ASCII characters without resetting the socket", async () => {
     const response = await request({
       method: "POST",
-      body: JSON.stringify({ projectTitle: "문자 경계", rawText: "a".repeat(25_001) }),
+      body: JSON.stringify({ provider: "paste", title: "문자 경계", text: "a".repeat(25_001) }),
     });
 
     await expectError(response, 413, "RAW_TEXT_TOO_LONG");
@@ -279,7 +297,7 @@ describe("context analysis HTTP API", () => {
   it("returns REQUEST_TOO_LARGE as JSON only when the complete body exceeds the transport cap", async () => {
     const response = await request({
       method: "POST",
-      body: JSON.stringify({ projectTitle: "본문 경계", rawText: "a".repeat(120_000) }),
+      body: JSON.stringify({ provider: "paste", title: "본문 경계", text: "a".repeat(300_000) }),
     });
 
     await expectError(response, 413, "REQUEST_TOO_LARGE");
@@ -317,10 +335,10 @@ describe("context analysis HTTP API", () => {
     await new Promise((resolve) => cancellationServer.listen(0, "127.0.0.1", resolve));
     const address = cancellationServer.address();
     const controller = new AbortController();
-    const pendingRequest = fetch(`http://127.0.0.1:${address.port}/api/context-analysis`, {
+    const pendingRequest = fetch(`http://127.0.0.1:${address.port}${PUBLIC_IMPORT_PATH}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectTitle: "취소 검증", rawText: validRawText }),
+      body: JSON.stringify({ provider: "paste", title: "취소 검증", text: validRawText }),
       signal: controller.signal,
     });
 
@@ -344,7 +362,7 @@ describe("context analysis HTTP API", () => {
 });
 
 function request({ method, body }) {
-  return fetch(`${baseUrl}/api/context-analysis`, {
+  return fetch(`${baseUrl}${PUBLIC_IMPORT_PATH}`, {
     method,
     headers: body === undefined ? undefined : { "Content-Type": "application/json" },
     body,
@@ -352,7 +370,7 @@ function request({ method, body }) {
 }
 
 function requestImport(body) {
-  return fetch(`${baseUrl}/api/context-analysis/import`, {
+  return fetch(`${baseUrl}${PUBLIC_IMPORT_PATH}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),

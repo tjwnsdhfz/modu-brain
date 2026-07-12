@@ -1,0 +1,69 @@
+name: Modu Brain uptime
+
+on:
+  schedule:
+    # GitHub cron is UTC. Run every six hours without polling the DB-backed readiness endpoint.
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      targets:
+        description: "Comma-separated HTTPS live-health URLs; blank uses the repository variable or safe fallbacks"
+        required: false
+        type: string
+      timeout_ms:
+        description: "Total per-target timeout in milliseconds (allows Render Free cold starts)"
+        required: false
+        default: "90000"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: modu-brain-uptime
+  cancel-in-progress: true
+
+jobs:
+  live-health:
+    name: Public live-health check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+
+      - name: Check public live endpoints
+        id: monitor
+        shell: bash
+        env:
+          MONITOR_TARGETS: ${{ inputs.targets || vars.MODU_BRAIN_MONITOR_TARGETS || '' }}
+          MONITOR_TIMEOUT_MS: ${{ inputs.timeout_ms || vars.MODU_BRAIN_MONITOR_TIMEOUT_MS || '90000' }}
+          MONITOR_OUTPUT_PATH: monitor-results.json
+        run: |
+          set +e
+          npm run ops:monitor
+          monitor_exit_code=$?
+          set -e
+          echo "exit_code=$monitor_exit_code" >> "$GITHUB_OUTPUT"
+
+      - name: Upload monitor report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: uptime-${{ github.run_id }}
+          path: monitor-results.json
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Fail when an endpoint is unhealthy
+        if: steps.monitor.outputs.exit_code != '0'
+        shell: bash
+        run: |
+          echo "One or more configured Modu Brain live-health endpoints failed."
+          exit 1

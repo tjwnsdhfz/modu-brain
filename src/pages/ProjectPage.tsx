@@ -10,6 +10,7 @@ import {
 import AnalysisComparison from "../components/AnalysisComparison";
 import AnalysisFeedbackPanel from "../components/AnalysisFeedbackPanel";
 import AgentExecutionRail from "../components/AgentExecutionRail";
+import AgentInsightPanel from "../components/AgentInsightPanel";
 import ContextBacklinks from "../components/ContextBacklinks";
 import ContextImportPanel, {
   type ContextImportInput as ContextImportPanelInput,
@@ -251,8 +252,7 @@ function ProjectPage({ api, token, projectId, navigate }: ProjectPageProps) {
 
   useEffect(() => {
     if (
-      activeTab !== "overview" ||
-      overviewView !== "history" ||
+      !(activeTab === "map" || (activeTab === "overview" && overviewView === "history")) ||
       !comparisonPrevious ||
       comparisonPrevious.result
     ) {
@@ -599,7 +599,18 @@ function ProjectPage({ api, token, projectId, navigate }: ProjectPageProps) {
         {activeTab === "map" && (
           selectedRun?.result ? (
             <div className="map-workspace">
-              <KnowledgeMap result={selectedRun.result} onOpenEvidence={openEvidence} />
+              {comparisonDetailLoading && <div className="loading-card" role="status">시간축에 표시할 이전 성공 분석을 불러오는 중…</div>}
+              {comparisonDetailError && comparisonPrevious && (
+                <div className="notice warning" role="alert">
+                  이전 분석의 시간축을 불러오지 못했습니다. {comparisonDetailError}
+                  <button type="button" onClick={() => void loadComparisonDetail(comparisonPrevious.id)}>다시 시도</button>
+                </div>
+              )}
+              <KnowledgeMap
+                result={selectedRun.result}
+                previousResult={comparisonPrevious?.result}
+                onOpenEvidence={openEvidence}
+              />
               <ContextBacklinks
                 sources={sources}
                 result={selectedRun.result}
@@ -934,6 +945,11 @@ function RecordsTab({ api, token, projectId, sources, hasMore, loadingMore, onLo
       ],
       (selected) => new Set(selected).add(imported.source.id),
     );
+    return {
+      duplicate: imported.duplicate,
+      participantCount: imported.participants.length,
+      segmentCount: imported.segmentCount,
+    };
   };
 
   return (
@@ -1105,6 +1121,13 @@ function HistoryTab({
               <DecisionList decisions={selectedRun.result.decisions} onOpenEvidence={onOpenEvidence} />
               </div>
               <ParticipantAgentPanel synthesis={selectedRun.result.participantAgents} />
+              {latest?.result && (
+                <AgentInsightPanel
+                  latest={latest.result}
+                  previous={previous?.result}
+                  onOpenEvidence={onOpenEvidence}
+                />
+              )}
               {comparisonLoading && <div className="loading-card" role="status">비교할 이전 성공 분석을 불러오는 중…</div>}
               {comparisonError && previous && (
                 <div className="notice warning" role="alert">
