@@ -33,15 +33,16 @@
 20260711185902 operations_hardening_expand
 20260711191125 authenticated_mutation_boundary
 20260712031058 app_import_and_annotation_boundary
+20260712054932 revoke_authenticated_compatibility_rpcs
 ```
 
 Sites와 Render가 service-only RPC를 사용하는 새 버전으로 배포되고 readiness와 공개 분석이 확인된 뒤 contract migration을 적용했다. 이제 로그인 사용자의 직접 테이블 쓰기와 구형 분석 시작·일반 rate-limit RPC 실행은 차단된다.
 
-새 가져오기·annotation 경계는 expand만 원격에 적용했고 contract는 새 BFF 배포와 smoke 이후 적용한다.
+새 가져오기·annotation 경계는 expand 뒤 새 BFF를 두 호스팅 환경에 배포하고 smoke를 통과한 다음 contract까지 원격에 적용했다.
 
 ```text
 20260712031058 app_import_and_annotation_boundary       # expand, applied
-20260712031100 revoke_authenticated_compatibility_rpcs  # contract, pending
+20260712054932 revoke_authenticated_compatibility_rpcs  # contract, applied
 ```
 
 적용 순서는 `expand 적용 → 새 BFF 배포 → 로그인 가져오기·annotation smoke → contract 적용`으로 고정한다. expand는 service-only `app_import_source_context`, `app_create_analysis_run_annotation`만 추가하고 기존 권한을 유지한다. contract는 새 함수 존재를 확인한 뒤 구형 두 RPC의 `public`·`anon`·`authenticated` 실행 권한을 제거한다.

@@ -20,7 +20,7 @@ with expected(version, name) as (
     ('20260711185902', 'operations_hardening_expand'),
     ('20260711191125', 'authenticated_mutation_boundary'),
     ('20260712031058', 'app_import_and_annotation_boundary'),
-    ('20260712031100', 'revoke_authenticated_compatibility_rpcs')
+    ('20260712054932', 'revoke_authenticated_compatibility_rpcs')
 )
 select e.version,
        e.name as expected_name,
@@ -40,7 +40,7 @@ with expected(version) as (
     ('20260711185902'),
     ('20260711191125'),
     ('20260712031058'),
-    ('20260712031100')
+    ('20260712054932')
 )
 select m.version as unexpected_version, m.name as unexpected_name
 from supabase_migrations.schema_migrations m
