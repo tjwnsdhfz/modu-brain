@@ -99,6 +99,20 @@ function App({ auth = defaultAuthService, api = defaultPlatformApi }: AppProps) 
     document.getElementById("main-content")?.focus({ preventScroll: true });
   }, [pathname]);
 
+  useEffect(() => {
+    const focusSkipLinkOnKeyboardEntry = (event: KeyboardEvent) => {
+      if (event.key !== "Tab" || event.shiftKey) return;
+      if (document.activeElement !== document.body && document.activeElement !== document.documentElement) return;
+      const skipLink = document.querySelector<HTMLAnchorElement>(".skip-link");
+      if (!skipLink) return;
+      event.preventDefault();
+      skipLink.focus();
+    };
+
+    document.addEventListener("keydown", focusSkipLinkOnKeyboardEntry, true);
+    return () => document.removeEventListener("keydown", focusSkipLinkOnKeyboardEntry, true);
+  }, []);
+
   const signOut = async () => {
     if (signingOut) return;
     setSigningOut(true);
