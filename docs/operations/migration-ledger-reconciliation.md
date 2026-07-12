@@ -32,13 +32,23 @@
 20260711113201 analysis_workflow_events_and_annotations
 20260711185902 operations_hardening_expand
 20260711191125 authenticated_mutation_boundary
+20260712031058 app_import_and_annotation_boundary
 ```
 
-Sites와 Render가 service-only RPC를 사용하는 새 버전으로 배포되고 readiness와 공개 분석이 확인된 뒤 contract migration을 적용했다. 이제 로그인 사용자의 직접 테이블 쓰기와 구형 분석 시작·일반 rate-limit RPC 실행은 차단된다. 원문 가져오기와 분석 주석 RPC는 내부에서 `auth.uid()`·소유권·크기·멱등성을 검증하므로 한 릴리스 동안 호환 경로로 유지한다. 다음 schema major release에서는 `app_import_source_context`와 `app_create_analysis_run_annotation`으로 옮긴 뒤 두 호환 RPC의 authenticated 실행 권한을 제거한다.
+Sites와 Render가 service-only RPC를 사용하는 새 버전으로 배포되고 readiness와 공개 분석이 확인된 뒤 contract migration을 적용했다. 이제 로그인 사용자의 직접 테이블 쓰기와 구형 분석 시작·일반 rate-limit RPC 실행은 차단된다.
+
+새 가져오기·annotation 경계는 expand만 원격에 적용했고 contract는 새 BFF 배포와 smoke 이후 적용한다.
+
+```text
+20260712031058 app_import_and_annotation_boundary       # expand, applied
+20260712031100 revoke_authenticated_compatibility_rpcs  # contract, pending
+```
+
+적용 순서는 `expand 적용 → 새 BFF 배포 → 로그인 가져오기·annotation smoke → contract 적용`으로 고정한다. expand는 service-only `app_import_source_context`, `app_create_analysis_run_annotation`만 추가하고 기존 권한을 유지한다. contract는 새 함수 존재를 확인한 뒤 구형 두 RPC의 `public`·`anon`·`authenticated` 실행 권한을 제거한다.
 
 ## 향후 변경 원칙
 
-- 배포 전 `supabase/checks/migration_drift.sql`을 실행해 위 일곱 version과 일치하는지 확인한다.
+- 배포 전 `supabase/checks/migration_drift.sql`을 실행해 기대 version과 일치하는지 확인한다.
 - 새 drift가 있으면 ledger를 임의로 바꾸지 않고 먼저 snapshot과 schema diff를 만든다.
 - 운영 schema 변경과 복구는 새 forward migration으로 명시한다.
 - production rollback 폴더의 `*.down.sql`은 실행하지 않는다. 해당 파일은 빈 로컬 DB의 가역성 시험 전용이다.

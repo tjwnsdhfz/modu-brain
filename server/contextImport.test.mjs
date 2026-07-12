@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { ApiError } from "./apiErrors.mjs";
 import {
   CONTEXT_IMPORT_MAX_CHARACTERS,
+  CONTEXT_IMPORT_PARSER_VERSIONS,
   normalizeContextImport,
   parseContextImport,
 } from "./contextImport.mjs";
@@ -33,6 +34,7 @@ describe("external context import normalization", () => {
       metadata: { format: "plain_text" },
     });
     expect(first.externalId).toMatch(/^paste:source:[a-f0-9]{24}$/);
+    expect(first.metadata.parserVersion).toBe(CONTEXT_IMPORT_PARSER_VERSIONS.paste);
     expect(first.segments).toEqual([
       expect.objectContaining({
         externalId: expect.stringMatching(/^paste:segment:[a-f0-9]{24}$/),
@@ -40,6 +42,19 @@ describe("external context import normalization", () => {
         sourceUrl: "https://example.com/context",
       }),
     ]);
+  });
+
+  it("records the requested parser contract version for future replay", () => {
+    const result = normalizeContextImport({
+      provider: "paste",
+      text: "회의 원문을 버전이 있는 파서 계약으로 저장합니다.",
+      parserVersion: "paste@1.1-preview",
+    });
+
+    expect(result.metadata).toMatchObject({
+      format: "plain_text",
+      parserVersion: "paste@1.1-preview",
+    });
   });
 
   it("accepts a plain-text JSON payload and explicit external ID", () => {

@@ -152,7 +152,7 @@ describe("v1 API", () => {
     expect(await options.text()).toBe("");
   });
 
-  it("requires a Supabase bearer session", async () => {
+  it("requires a same-origin cookie session", async () => {
     const response = await fetch(`${baseUrl}/api/v1/projects`);
     expect(response.status).toBe(401);
     await expect(response.json()).resolves.toMatchObject({ error: { code: "AUTH_REQUIRED" } });
@@ -281,17 +281,23 @@ describe("v1 API", () => {
     }
   });
 
-  it("keeps legacy Bearer precedence when both bearer and cookie credentials are present", async () => {
+  it("rejects the removed Bearer authentication fallback", async () => {
     const cookie = "modu_brain_access=valid-token; modu_brain_refresh=refresh";
     const bearer = await fetch(`${baseUrl}/api/v1/projects`, {
       headers: { Cookie: cookie, Authorization: "Bearer valid-token" },
     });
-    expect(bearer.status).toBe(200);
+    expect(bearer.status).toBe(401);
+    await expect(bearer.json()).resolves.toMatchObject({
+      error: { code: "BEARER_AUTH_UNSUPPORTED" },
+    });
 
     const malformedBearer = await fetch(`${baseUrl}/api/v1/projects`, {
       headers: { Cookie: cookie, Authorization: "Bearer wrong-token" },
     });
     expect(malformedBearer.status).toBe(401);
+    await expect(malformedBearer.json()).resolves.toMatchObject({
+      error: { code: "BEARER_AUTH_UNSUPPORTED" },
+    });
   });
 
   it("rotates near-expiry cookies on restore and through the explicit refresh route", async () => {
@@ -383,7 +389,7 @@ describe("v1 API", () => {
 
     const oversized = await fetch(`${baseUrl}/api/v1/auth/session`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { Origin: baseUrl, "Content-Type": "application/json" },
       body: JSON.stringify({
         accessToken: "a".repeat(17 * 1024),
         refreshToken: "refresh",
@@ -394,7 +400,7 @@ describe("v1 API", () => {
 
     const oversizedCookie = await fetch(`${baseUrl}/api/v1/auth/session`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { Origin: baseUrl, "Content-Type": "application/json" },
       body: JSON.stringify({
         accessToken: "a".repeat(3_501),
         refreshToken: "refresh",
@@ -408,7 +414,7 @@ describe("v1 API", () => {
 
     const encodedCookieOverflow = await fetch(`${baseUrl}/api/v1/auth/session`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { Origin: baseUrl, "Content-Type": "application/json" },
       body: JSON.stringify({
         accessToken: "é".repeat(600),
         refreshToken: "refresh",
@@ -532,6 +538,7 @@ describe("v1 API", () => {
       },
     });
     expect(repository.importSourceContext).toHaveBeenCalledWith(
+      USER_ID,
       PROJECT_ID,
       expect.objectContaining({
         provider: "teams",
@@ -997,7 +1004,11 @@ describe("v1 API", () => {
     const token = "a".repeat(43);
     const response = await fetch(`${baseUrl}/api/v1/shared/resolve`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "X-Forwarded-For": "203.0.113.4" },
+      headers: {
+        Origin: baseUrl,
+        "Content-Type": "application/json",
+        "X-Forwarded-For": "203.0.113.4",
+      },
       body: JSON.stringify({ token }),
     });
     const body = await response.json();
@@ -1073,7 +1084,11 @@ describe("v1 API", () => {
     };
     const accepted = await fetch(`${baseUrl}/api/v1/telemetry`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "X-Forwarded-For": "203.0.113.8" },
+      headers: {
+        Origin: baseUrl,
+        "Content-Type": "application/json",
+        "X-Forwarded-For": "203.0.113.8",
+      },
       body: JSON.stringify(event),
     });
     expect(accepted.status).toBe(202);
@@ -1082,7 +1097,7 @@ describe("v1 API", () => {
 
     const rejected = await fetch(`${baseUrl}/api/v1/telemetry`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { Origin: baseUrl, "Content-Type": "application/json" },
       body: JSON.stringify({ ...event, properties: { ...event.properties, email: "private@example.com" } }),
     });
     expect(rejected.status).toBe(400);
@@ -1141,11 +1156,19 @@ describe("v1 API", () => {
     });
     expect(missingCookieOrigin.status).toBe(403);
 
-    const originlessLegacyBearer = await api("/api/v1/projects", {
+    const removedBearer = await fetch(`${baseUrl}/api/v1/projects`, {
       method: "POST",
-      body: { title: "legacy bearer", description: "" },
+      headers: {
+        Origin: baseUrl,
+        Authorization: "Bearer valid-token",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ title: "removed bearer", description: "" }),
     });
-    expect(originlessLegacyBearer.status).toBe(201);
+    expect(removedBearer.status).toBe(401);
+    await expect(removedBearer.json()).resolves.toMatchObject({
+      error: { code: "BEARER_AUTH_UNSUPPORTED" },
+    });
 
     const invalid = await api(`/api/v1/projects/${PROJECT_ID}/sources`, {
       method: "POST",
@@ -1158,7 +1181,7 @@ describe("v1 API", () => {
 function createCookieSession(headers = {}, expiresIn = 3600) {
   return fetch(`${baseUrl}/api/v1/auth/session`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...headers },
+    headers: { Origin: baseUrl, "Content-Type": "application/json", ...headers },
     body: JSON.stringify({
       accessToken: "valid-token",
       refreshToken: "callback-refresh",
@@ -1202,7 +1225,16 @@ function cookieHeader(headers) {
 }
 
 function api(path, options = {}) {
-  const headers = { Authorization: "Bearer valid-token", ...(options.headers || {}) };
+  const method = String(options.method || "GET").toUpperCase();
+  const headers = {
+    Cookie: [
+      "modu_brain_access=valid-token",
+      "modu_brain_refresh=callback-refresh",
+      `modu_brain_expires=${authNow + 3_600_000}`,
+    ].join("; "),
+    ...(["POST", "PATCH", "PUT", "DELETE"].includes(method) ? { Origin: baseUrl } : {}),
+    ...(options.headers || {}),
+  };
   if (options.body !== undefined) headers["Content-Type"] = "application/json";
   return fetch(`${baseUrl}${path}`, {
     ...options,
@@ -1229,7 +1261,7 @@ function createFakeRepository() {
     deleteProject: vi.fn(async () => undefined),
     listSources: vi.fn(async () => [source]),
     createSource: vi.fn(async (_userId, _projectId, values) => (source = sourceRow(values))),
-    importSourceContext: vi.fn(async (_projectId, values) => {
+    importSourceContext: vi.fn(async (_userId, _projectId, values) => {
       source = sourceRow({
         kind: values.kind,
         title: values.title,
@@ -1297,7 +1329,7 @@ function createFakeRepository() {
     }),
     listRunStepEvents: vi.fn(async () => stepEvents),
     listRunAnnotations: vi.fn(async () => annotations),
-    createRunAnnotation: vi.fn(async (_runId, values) => {
+    createRunAnnotation: vi.fn(async (_runId, _userId, values) => {
       const existing = annotations.find(
         (annotation) => annotation.idempotency_key === values.idempotencyKey,
       );

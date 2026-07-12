@@ -6,7 +6,34 @@ export type EvidenceRef = {
   quote: string;
 };
 
-export type KnowledgeNode = {
+export type ConfidenceLevel = "low" | "medium" | "high";
+
+/**
+ * A deterministic grounding assessment produced from exact snapshot matches.
+ * This describes confidence in the extraction, not whether a decision is good.
+ */
+export type AgentConfidence = {
+  score: number;
+  level: ConfidenceLevel;
+  rationale: string;
+  evidenceCount: number;
+  sourceCount: number;
+};
+
+export type DecisionLifecycleStatus = "new" | "changed" | "stable" | "resolved";
+
+export type TemporalKnowledgeMeta = {
+  lifecycle?: DecisionLifecycleStatus;
+  observedAt?: string;
+  previousObservedAt?: string;
+  contradictionIds?: string[];
+};
+
+export type AgentAssessed = {
+  agentConfidence?: AgentConfidence;
+};
+
+export type KnowledgeNode = AgentAssessed & TemporalKnowledgeMeta & {
   id: string;
   label: string;
   type: NodeType;
@@ -20,7 +47,7 @@ export type KnowledgeLink = {
   relation: string;
 };
 
-export type PerspectiveItem = {
+export type PerspectiveItem = AgentAssessed & {
   id?: string;
   actor: string;
   role: string;
@@ -30,7 +57,7 @@ export type PerspectiveItem = {
   evidence?: EvidenceRef[];
 };
 
-export type ParticipantAgentView = {
+export type ParticipantAgentView = AgentAssessed & {
   id?: string;
   actor: string;
   role: string;
@@ -55,7 +82,7 @@ export type ContextSummary = {
   generatedAt: string;
 };
 
-export type QuestionItem = {
+export type QuestionItem = AgentAssessed & {
   id?: string;
   question: string;
   reason: string;
@@ -76,22 +103,26 @@ export type ProviderInfo = {
   usedExternalModel: boolean;
 };
 
+export type KeyTermItem = AgentAssessed & {
+  id?: string;
+  term: string;
+  meaning: string;
+  evidence?: EvidenceRef[];
+};
+
+export type DecisionItem = AgentAssessed & TemporalKnowledgeMeta & {
+  id?: string;
+  decision: string;
+  reason: string;
+  status: "confirmed" | "tentative" | "unclear";
+  evidence?: EvidenceRef[];
+};
+
 export type ContextAnalysisResult = {
   projectTitle: string;
   summary: ContextSummary;
-  keyTerms: {
-    id?: string;
-    term: string;
-    meaning: string;
-    evidence?: EvidenceRef[];
-  }[];
-  decisions: {
-    id?: string;
-    decision: string;
-    reason: string;
-    status: "confirmed" | "tentative" | "unclear";
-    evidence?: EvidenceRef[];
-  }[];
+  keyTerms: KeyTermItem[];
+  decisions: DecisionItem[];
   participants: PerspectiveItem[];
   questions: QuestionItem[];
   knowledgeMap: {

@@ -3,10 +3,7 @@ import { sha256 } from "./security.mjs";
 
 export function buildContextAnalysisResultV2(result, snapshots) {
   validateClaimedEvidence(result, snapshots);
-  const evidenceFor = (hints = []) => {
-    const reference = findEvidence(snapshots, hints);
-    return reference ? [reference] : [];
-  };
+  const evidenceFor = (hints = []) => findEvidenceReferences(snapshots, hints);
   const originalViews = result.participantAgents?.views || [];
   const viewEvidenceByActor = new Map(
     originalViews.map((view) => [normalizeIdentity(view.actor), view.evidence || []]),
@@ -17,10 +14,12 @@ export function buildContextAnalysisResultV2(result, snapshots) {
       const identity = normalizeIdentity(identityFor(item));
       const duplicateIndex = occurrences.get(identity) || 0;
       occurrences.set(identity, duplicateIndex + 1);
+      const evidence = evidenceFor(hintsFor(item));
       return {
         ...item,
         id: stableItemId(type, identity, duplicateIndex),
-        evidence: evidenceFor(hintsFor(item)),
+        evidence,
+        agentConfidence: assessEvidenceGrounding(evidence),
       };
     });
   };
@@ -79,14 +78,16 @@ export function buildContextAnalysisResultV2(result, snapshots) {
       const identity = normalizeIdentity(view.actor);
       const duplicateIndex = viewOccurrences.get(identity) || 0;
       viewOccurrences.set(identity, duplicateIndex + 1);
+      const evidenceRefs = evidenceFor([
+        ...(view.evidence || []),
+        view.priority,
+        view.interpretation,
+      ]);
       return {
         ...view,
         id: stableItemId("view", identity, duplicateIndex),
-        evidenceRefs: evidenceFor([
-          ...(view.evidence || []),
-          view.priority,
-          view.interpretation,
-        ]),
+        evidenceRefs,
+        agentConfidence: assessEvidenceGrounding(evidenceRefs),
       };
     }),
   };
@@ -141,16 +142,51 @@ function validateClaimedEvidence(result, snapshots) {
   }
 }
 
-function findEvidence(snapshots, hints) {
+function findEvidenceReferences(snapshots, hints) {
+  const references = [];
+  const seen = new Set();
   for (const hint of hints.filter(Boolean).map((value) => String(value).trim())) {
     if (hint.length < 4) continue;
     for (const snapshot of snapshots) {
       const content = String(snapshot.content_snapshot || "");
       const direct = content.indexOf(hint);
-      if (direct >= 0) return reference(snapshot, content.slice(direct, direct + hint.length));
+      if (direct < 0) continue;
+      const found = reference(snapshot, content.slice(direct, direct + hint.length));
+      const key = `${found.sourceRecordId}\u0000${found.quote}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        references.push(found);
+      }
+      break;
     }
+    if (references.length === 3) break;
   }
-  return null;
+  return references;
+}
+
+export function assessEvidenceGrounding(evidence = []) {
+  const evidenceCount = evidence.length;
+  const sourceCount = new Set(evidence.map((item) => item.sourceRecordId)).size;
+  const averageQuoteLength = evidenceCount === 0
+    ? 0
+    : evidence.reduce((sum, item) => sum + String(item.quote || "").length, 0) / evidenceCount;
+  let score = 0.2;
+  if (evidenceCount > 0) {
+    score = 0.58;
+    score += Math.min(0.18, Math.max(0, evidenceCount - 1) * 0.09);
+    score += Math.min(0.12, Math.max(0, sourceCount - 1) * 0.12);
+    if (averageQuoteLength >= 24) score += 0.07;
+  }
+  score = Math.min(0.95, Math.round(score * 100) / 100);
+  const level = score >= 0.8 ? "high" : score >= 0.55 ? "medium" : "low";
+  const rationale = evidenceCount === 0
+    ? "선택한 원문에서 직접 일치하는 인용문을 찾지 못해 낮은 신뢰도로 표시했습니다."
+    : `원문 ${sourceCount}개에서 정확히 일치하는 인용문 ${evidenceCount}개를 확인해 ${confidenceLabel(level)} 신뢰도로 표시했습니다.`;
+  return { score, level, rationale, evidenceCount, sourceCount };
+}
+
+function confidenceLabel(level) {
+  return { high: "높은", medium: "보통", low: "낮은" }[level];
 }
 
 function reference(snapshot, quote) {

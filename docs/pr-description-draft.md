@@ -125,12 +125,12 @@ POST             /api/v1/shared/resolve
 GET              /api/v1/account/export
 DELETE           /api/v1/account
 POST             /api/v1/telemetry
-POST             /api/context-analysis/import
+POST             /api/v1/public/context-analysis/import
 GET              /api/health/live
 GET              /api/health/ready
 ```
 
-기존 `POST /api/context-analysis`는 한 릴리스 동안 비영속 호환 API로 유지합니다.
+기존 `POST /api/context-analysis`와 `/api/context-analysis/import`는 `410 LEGACY_ENDPOINT_REMOVED`를 반환합니다.
 
 ## 검증
 

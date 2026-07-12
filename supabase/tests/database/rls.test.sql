@@ -40,7 +40,7 @@ select function_privs_are(
 select function_privs_are(
   'public', 'import_source_context',
   array['uuid','text','text','text','text','text','timestamptz','jsonb','jsonb','jsonb'],
-  'authenticated', array['EXECUTE'], 'authenticated users can atomically import owned context'
+  'authenticated', array[]::text[], 'authenticated users cannot execute context imports directly'
 );
 select function_privs_are(
   'public', 'import_source_context',
@@ -54,7 +54,7 @@ select function_privs_are(
 select function_privs_are(
   'public', 'create_analysis_run_annotation',
   array['uuid','text','text','text','text','text'],
-  'authenticated', array['EXECUTE'], 'authenticated owners can create immutable feedback'
+  'authenticated', array[]::text[], 'authenticated users cannot create feedback directly'
 );
 select function_privs_are(
   'public', 'create_analysis_run_annotation',
@@ -129,8 +129,10 @@ select is(
   'stored emoji char_count matches the API code-point metric'
 );
 
+set local role service_role;
 select is(
-  (select duplicate from public.import_source_context(
+  (select duplicate from public.app_import_source_context(
+    '11111111-1111-4111-8111-111111111111',
     '22222222-2222-4222-8222-222222222222',
     'meeting',
     'Imported meeting',
@@ -151,7 +153,8 @@ select is(
 select is(
   (
     select array_agg(response_key order by response_key collate "C")
-    from public.import_source_context(
+    from public.app_import_source_context(
+      '11111111-1111-4111-8111-111111111111',
       '22222222-2222-4222-8222-222222222222',
       'meeting', 'Imported meeting',
       'Alice decided launch. Bob owns follow-up.', 'kakaotalk', 'chat-room-1'
@@ -180,7 +183,8 @@ select is(
   'segments preserve their source order'
 );
 select is(
-  (select duplicate from public.import_source_context(
+  (select duplicate from public.app_import_source_context(
+    '11111111-1111-4111-8111-111111111111',
     '22222222-2222-4222-8222-222222222222',
     'meeting', 'A renamed duplicate',
     'Alice decided launch. Bob owns follow-up.', 'kakaotalk', 'chat-room-1'
@@ -228,8 +232,10 @@ select throws_like($$
   select project_id, id, 99, 'forged segment'
   from public.source_records where title = 'Imported meeting'
 $$, '%permission denied%', 'authenticated users cannot forge immutable source segments directly');
+set local role service_role;
 select throws_ok($$
-  select * from public.import_source_context(
+  select * from public.app_import_source_context(
+    p_user_id => '11111111-1111-4111-8111-111111111111',
     p_project_id => '22222222-2222-4222-8222-222222222222',
     p_kind => 'note',
     p_title => 'Credential leak',
@@ -239,7 +245,8 @@ select throws_ok($$
   )
 $$, 'P0001', 'INVALID_IMPORT_METADATA', 'import metadata rejects OAuth credentials');
 select throws_ok($$
-  select * from public.import_source_context(
+  select * from public.app_import_source_context(
+    p_user_id => '11111111-1111-4111-8111-111111111111',
     p_project_id => '22222222-2222-4222-8222-222222222222',
     p_kind => 'note',
     p_title => 'Invalid participants',
@@ -250,7 +257,8 @@ select throws_ok($$
 $$, 'P0001', 'INVALID_PARTICIPANTS', 'participant values must be non-empty display-name strings');
 
 select is(
-  (select duplicate from public.import_source_context(
+  (select duplicate from public.app_import_source_context(
+    '11111111-1111-4111-8111-111111111111',
     '22222222-2222-4222-8222-222222222222',
     'meeting', 'Same text in another chat',
     'Alice decided launch. Bob owns follow-up.', 'kakaotalk', 'chat-room-2'
@@ -274,12 +282,14 @@ where id = (
 set local role authenticated;
 set local "request.jwt.claim.sub" = '11111111-1111-4111-8111-111111111111';
 set local "request.jwt.claim.role" = 'authenticated';
+set local role service_role;
 select ok(
   (select
     duplicate
     and source ->> 'archived_at' is null
     and source ->> 'title' = 'Restored imported meeting'
-  from public.import_source_context(
+  from public.app_import_source_context(
+    '11111111-1111-4111-8111-111111111111',
     '22222222-2222-4222-8222-222222222222',
     'meeting', 'Restored imported meeting',
     'Alice decided launch. Bob owns follow-up.', 'kakaotalk', 'chat-room-1'
@@ -287,6 +297,9 @@ select ok(
   'reimport atomically restores an archived duplicate and refreshes its title'
 );
 
+set local role authenticated;
+set local "request.jwt.claim.sub" = '11111111-1111-4111-8111-111111111111';
+set local "request.jwt.claim.role" = 'authenticated';
 select table_privs_are(
   'public', 'context_entities', 'authenticated', array['SELECT'],
   'authenticated context-entity access is read-only after the mutation-boundary contract'
@@ -360,8 +373,10 @@ select is((select count(*) from public.source_segments), 0::bigint, 'another use
 select is((select count(*) from public.context_entities), 0::bigint, 'another user cannot read context entities');
 select is((select count(*) from public.context_entity_aliases), 0::bigint, 'another user cannot read entity aliases');
 select is((select count(*) from public.context_edges), 0::bigint, 'another user cannot read context edges');
+set local role service_role;
 select throws_ok($$
-  select * from public.import_source_context(
+  select * from public.app_import_source_context(
+    '99999999-9999-4999-8999-999999999999',
     '22222222-2222-4222-8222-222222222222',
     'note', 'Stolen import', 'must not persist', 'paste'
   )
@@ -443,10 +458,10 @@ select lives_ok($$
   where project_id = '22222222-2222-4222-8222-222222222222'
 $$, 'service role can complete an owned running analysis');
 
-set local role authenticated;
-set local "request.jwt.claim.sub" = '11111111-1111-4111-8111-111111111111';
+set local role service_role;
 select is(
-  (select outcome from public.create_analysis_run_annotation(
+  (select outcome from public.app_create_analysis_run_annotation(
+    '11111111-1111-4111-8111-111111111111',
     (select id from public.analysis_runs where idempotency_key = 'idempotency-key'),
     'annotation-key-1', 'correction', 'decision', 'decision_public',
     'Confirm the source evidence for this decision.'
@@ -455,7 +470,8 @@ select is(
   'owner can create immutable feedback for a succeeded result item'
 );
 select is(
-  (select outcome from public.create_analysis_run_annotation(
+  (select outcome from public.app_create_analysis_run_annotation(
+    '11111111-1111-4111-8111-111111111111',
     (select id from public.analysis_runs where idempotency_key = 'idempotency-key'),
     'annotation-key-1', 'correction', 'decision', 'decision_public',
     'Confirm the source evidence for this decision.'
@@ -464,7 +480,8 @@ select is(
   'same annotation idempotency key and payload reuses the immutable record'
 );
 select throws_ok($$
-  select * from public.create_analysis_run_annotation(
+  select * from public.app_create_analysis_run_annotation(
+    '11111111-1111-4111-8111-111111111111',
     (select id from public.analysis_runs where idempotency_key = 'idempotency-key'),
     'annotation-key-1', 'correction', 'decision', 'decision_public',
     'A different body under the same key.'
@@ -476,11 +493,15 @@ select is(
   'idempotent annotation creation stores exactly one row'
 );
 select throws_ok($$
-  select * from public.create_analysis_run_annotation(
+  select * from public.app_create_analysis_run_annotation(
+    '11111111-1111-4111-8111-111111111111',
     (select id from public.analysis_runs where idempotency_key = 'idempotency-key'),
     'annotation-key-2', 'note', 'decision', 'decision_missing', 'Missing target.'
   )
 $$, 'P0001', 'ANNOTATION_TARGET_NOT_FOUND', 'annotation targets must exist in the run result');
+set local role authenticated;
+set local "request.jwt.claim.sub" = '11111111-1111-4111-8111-111111111111';
+set local "request.jwt.claim.role" = 'authenticated';
 select throws_like($$
   insert into public.analysis_run_annotations(
     analysis_run_id, created_by, idempotency_key, request_fingerprint,
@@ -623,8 +644,10 @@ select is(
   0::bigint,
   'another user cannot read owner annotations'
 );
+set local role service_role;
 select throws_ok($$
-  select * from public.create_analysis_run_annotation(
+  select * from public.app_create_analysis_run_annotation(
+    '99999999-9999-4999-8999-999999999999',
     'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
     'cross-user-annotation', 'note', 'run', null, 'forbidden'
   )

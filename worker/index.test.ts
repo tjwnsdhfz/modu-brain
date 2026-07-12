@@ -86,6 +86,7 @@ describe("Sites Worker asset routing", () => {
         headers: {
           "Content-Type": "application/json",
           "CF-Ray": "worker-ray-1",
+          Origin: "https://modu-brain.example",
         },
         body: JSON.stringify({
           name: "analysis_failed",
@@ -110,22 +111,24 @@ describe("Sites Worker asset routing", () => {
     expect(JSON.stringify(event)).not.toContain("private@example.com");
   });
 
-  it("uses the service-role limiter RPC for public analysis", async () => {
+  it("uses the service-role limiter RPC for the versioned public import analysis", async () => {
     vi.spyOn(console, "info").mockImplementation(() => undefined);
     const fetchDatabase = vi.fn().mockResolvedValue(
       new Response("true", { status: 200, headers: { "Content-Type": "application/json" } }),
     );
     vi.stubGlobal("fetch", fetchDatabase);
     const response = await worker.fetch(
-      new Request("https://modu-brain.example/api/context-analysis", {
+      new Request("https://modu-brain.example/api/v1/public/context-analysis/import", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "CF-Connecting-IP": "203.0.113.9",
+          Origin: "https://modu-brain.example",
         },
         body: JSON.stringify({
-          projectTitle: "Worker limiter",
-          rawText:
+          provider: "paste",
+          title: "Worker limiter",
+          text:
             "A sufficiently long collaboration record is supplied for local structured analysis. ".repeat(3),
         }),
       }),
@@ -144,9 +147,9 @@ describe("Sites Worker asset routing", () => {
     const [url, request] = fetchDatabase.mock.calls[0];
     expect(url).toBe("https://demo.supabase.co/rest/v1/rpc/app_consume_public_rate_limit");
     expect(JSON.parse(request.body)).toMatchObject({
-      p_scope: "public-analysis:hour",
+      p_scope: "public-import:hour",
       p_subject_hash: expect.stringMatching(/^[a-f0-9]{64}$/),
-      p_limit: 30,
+      p_limit: 20,
       p_window_seconds: 3600,
     });
   });
@@ -179,10 +182,15 @@ describe("Sites Worker asset routing", () => {
       SUPABASE_SECRET_KEY: "secret-test",
       MODU_BRAIN_MAINTENANCE_ENABLED: "false",
     };
+    const futureExpiry = Date.now() + 60 * 60 * 1000;
+    const sessionCookie = [
+      "__Host-modu_brain_access=opaque-access-token",
+      `__Host-modu_brain_expires=${futureExpiry}`,
+    ].join("; ");
 
     const exported = await worker.fetch(
       new Request("https://modu-brain.example/api/v1/account/export", {
-        headers: { Authorization: "Bearer opaque-access-token" },
+        headers: { Cookie: sessionCookie },
       }),
       env,
     );
@@ -197,7 +205,8 @@ describe("Sites Worker asset routing", () => {
       new Request("https://modu-brain.example/api/v1/account", {
         method: "DELETE",
         headers: {
-          Authorization: "Bearer opaque-access-token",
+          Cookie: sessionCookie,
+          Origin: "https://modu-brain.example",
           "X-Confirm-Account-Delete": "delete my account",
         },
       }),

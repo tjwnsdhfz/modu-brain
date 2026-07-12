@@ -13,7 +13,9 @@
 | Notion | 페이지와 블록 형태 JSON | 페이지 제목, 블록 순서, 블록 URL |
 | 직접 붙여넣기 | 일반 텍스트 | 단일 맥락 세그먼트 |
 
-브라우저는 파일 내용을 JSON 요청으로만 전달한다. 서버의 `contextImport` 모듈이 공급자별 입력을 공통 구조로 정규화하고, `import_source_context` 데이터베이스 함수가 원문·가져오기 이력·세그먼트를 한 트랜잭션으로 저장한다.
+브라우저는 파일 내용을 JSON 요청으로만 전달한다. 서버의 `contextImport` 모듈이 공급자별 입력을 공통 구조로 정규화하고, BFF가 service-only `app_import_source_context` 데이터베이스 함수를 호출해 사용자 ID와 프로젝트 소유권을 다시 확인한 뒤 원문·가져오기 이력·세그먼트를 한 트랜잭션으로 저장한다.
+
+UI는 저장 전에 감지한 형식, 예상 맥락 수, 참여자와 원문 일부를 미리 보여준다. 현재 파서 계약은 `paste@1`, `kakaotalk@1`, `teams@1`, `notion@1`이며 선택한 버전을 가져오기 metadata에 함께 저장한다. 같은 공급자·외부 ID·내용은 기존 리소스를 반환하고 화면에서 중복 저장하지 않았음을 명시한다.
 
 ```text
 내보내기 파일/붙여넣기
@@ -49,13 +51,16 @@
 
 ## API
 
+로그인 없이 로컬 분석만 실행하는 공개 데모는 `POST /api/v1/public/context-analysis/import`를 사용한다. 결과는 저장하지 않으며 구형 `/api/context-analysis*` 경로는 `410`을 반환한다.
+
 `POST /api/v1/projects/:projectId/imports`
 
 ```json
 {
   "provider": "kakaotalk | teams | notion | paste",
   "title": "선택 제목",
-  "text": "내보낸 TXT, JSON 문자열 또는 붙여넣은 텍스트"
+  "text": "내보낸 TXT, JSON 문자열 또는 붙여넣은 텍스트",
+  "parserVersion": "kakaotalk@1"
 }
 ```
 

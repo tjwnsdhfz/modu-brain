@@ -438,9 +438,6 @@ class HttpPlatformApi implements PlatformApi {
         headers: {
           Accept: "application/json",
           ...(options.body === undefined ? {} : { "Content-Type": "application/json" }),
-          ...(options.token && options.token !== COOKIE_SESSION_SENTINEL
-            ? { Authorization: `Bearer ${options.token}` }
-            : {}),
           ...options.headers,
         },
         body: options.body === undefined ? undefined : JSON.stringify(options.body),

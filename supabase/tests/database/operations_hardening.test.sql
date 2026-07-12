@@ -87,17 +87,26 @@ select ok(
   'authenticated clients cannot execute superseded mutation RPCs'
 );
 select ok(
-  has_function_privilege(
+  not has_function_privilege(
     'authenticated',
     'public.import_source_context(uuid,text,text,text,text,text,timestamptz,jsonb,jsonb,jsonb)',
     'EXECUTE'
   )
-  and has_function_privilege(
+  and not has_function_privilege(
     'authenticated',
     'public.create_analysis_run_annotation(uuid,text,text,text,text,text)',
     'EXECUTE'
   ),
-  'ownership-checking compatibility RPCs remain available for one release'
+  'authenticated compatibility mutation RPCs are revoked'
+);
+select ok(
+  to_regprocedure(
+    'public.app_import_source_context(uuid,uuid,text,text,text,text,text,timestamptz,jsonb,jsonb,jsonb)'
+  ) is not null
+  and to_regprocedure(
+    'public.app_create_analysis_run_annotation(uuid,uuid,text,text,text,text,text)'
+  ) is not null,
+  'service-only import and annotation RPC replacements exist'
 );
 
 insert into auth.users(

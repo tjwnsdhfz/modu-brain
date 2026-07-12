@@ -22,26 +22,26 @@ flowchart LR
 | --- | --- |
 | 프런트엔드 | React 19, TypeScript, Vite, 브라우저 History 라우팅 |
 | 서버 | Cloudflare Worker와 Node.js HTTP, 같은 출처 정적 SPA + JSON API |
-| 인증 | Supabase 이메일 Magic Link, access/refresh token |
+| 인증 | Supabase 이메일 Magic Link, same-origin HttpOnly access/refresh 쿠키 |
 | 저장소 | Supabase PostgreSQL, SQL migration, PostgREST, RLS |
 | 분석 | 결정론적 `local-heuristic`, 선택형 OpenAI Responses API 구조화 출력 |
 | 검증 | Zod, 서버 입력 검증, 근거 부분 문자열 검증 |
 | 품질 | ESLint, TypeScript, Vitest/V8, pgTAP, Playwright, Gitleaks |
 | 배포 | Sites Worker + Render Node Web Service, Supabase Seoul 프로젝트 |
 
-브라우저가 서비스 역할 키로 DB를 직접 수정하지 않는다. API 런타임은 access token을 검증한 뒤 읽기를 같은 사용자 JWT의 PostgREST와 RLS로 수행한다. 쓰기는 서비스 역할만 호출할 수 있는 `app_*` RPC가 검증된 사용자 ID와 리소스 소유권을 다시 확인한 뒤 수행한다. 로그인 사용자의 테이블 직접 쓰기와 구형 분석 시작·일반 rate-limit RPC 실행 권한은 contract migration에서 제거한다. 원문 가져오기와 분석 annotation 호환 RPC만 내부 `auth.uid()`·소유권·크기·멱등성 검증을 전제로 한 릴리스 동안 유지한다.
+브라우저가 서비스 역할 키로 DB를 직접 수정하지 않는다. API 런타임은 HttpOnly 쿠키의 access token을 검증한 뒤 읽기를 같은 사용자 JWT의 PostgREST와 RLS로 수행한다. 쓰기는 서비스 역할만 호출할 수 있는 `app_*` RPC가 검증된 사용자 ID와 리소스 소유권을 다시 확인한 뒤 수행한다. 로그인 사용자의 테이블 직접 쓰기와 구형 RPC 실행 권한은 contract migration에서 제거한다. 브라우저 Bearer 인증과 구형 authenticated SECURITY DEFINER RPC는 받지 않는다.
 
 ## 3. 라우팅과 상태
 
 | 경로 | 인증 | 동작 |
 | --- | --- | --- |
-| `/` | 공개 | 저장되지 않는 로컬 샘플과 호환 분석 API |
+| `/` | 공개 | 저장되지 않는 로컬 샘플과 versioned 공개 가져오기 분석 API |
 | `/login` | 공개 | Magic Link 발송과 callback session 저장 |
 | `/projects` | 필요 | 사용자 소유 프로젝트 목록·생성 |
 | `/projects/:id` | 필요 | 개요, 기록, 분석 이력, 지식맵, 온보딩 |
 | `/share#token=…` | 공개 | 원문·계정정보를 제외한 읽기 전용 결과 |
 
-인증 session은 브라우저 저장소에 access token, refresh token, 만료 시각, 최소 사용자 정보만 저장한다. URL fragment로 받은 session은 즉시 저장한 뒤 주소를 `/projects`로 교체한다. 로그아웃은 로컬 session을 먼저 제거하며 원격 logout 실패가 로컬 로그아웃을 막지 않는다.
+인증 session은 BFF가 access token, refresh token, 만료 시각을 HttpOnly·SameSite 쿠키에만 저장한다. 브라우저 JavaScript에는 토큰을 반환하지 않으며 sessionStorage에는 비밀값을 두지 않는다. Magic Link callback fragment는 BFF 세션 교환 직후 제거하고 주소를 `/projects`로 교체한다. 로그아웃은 서버 쿠키를 만료시키며 원격 logout 실패가 브라우저 세션 정리를 막지 않는다.
 
 ## 4. 데이터 모델
 
@@ -142,7 +142,6 @@ type AnalysisRunResource = {
 
 ```http
 POST /api/v1/projects/:projectId/analysis-runs
-Authorization: Bearer <access-token>
 Idempotency-Key: <8..128 characters>
 Content-Type: application/json
 
@@ -159,7 +158,7 @@ Content-Type: application/json
 - 새 실행 성공은 `201`; provider 실패도 실행을 `failed`로 보존
 - `GET /api/v1/projects/:id/analysis-runs`, `GET|DELETE /api/v1/analysis-runs/:runId`
 
-실행 순서는 `start_analysis_run RPC → source_snapshot → provider_analysis → evidence_validation → result_persistence`다. 네트워크 호출 중 DB 트랜잭션을 유지하지 않는다. 클라이언트 연결 종료는 AbortSignal로 provider까지 전달되며 실행과 활성 단계는 `cancelled`가 된다.
+브라우저 인증은 same-origin HttpOnly 쿠키만 사용하며 Bearer 호환 인증은 받지 않는다. 실행 순서는 `app_start_analysis_run RPC → source_snapshot → provider_analysis → evidence_validation → result_persistence`다. 네트워크 호출 중 DB 트랜잭션을 유지하지 않는다. 클라이언트 연결 종료는 AbortSignal로 provider까지 전달되며 실행과 활성 단계는 `cancelled`가 된다.
 
 ### 6.3 단계 이벤트와 annotation
 
@@ -169,7 +168,7 @@ Content-Type: application/json
 | `GET` | `/api/v1/analysis-runs/:runId/annotations` | 소유한 실행의 불변 검토 기록 조회 |
 | `POST` | `/api/v1/analysis-runs/:runId/annotations` | 성공 실행의 실제 결과 target에 검토 기록 생성 |
 
-annotation 생성은 8~128자의 `Idempotency-Key`를 요구한다. 같은 키·같은 payload는 기존 행과 `200`, 같은 키·다른 payload는 `409 IDEMPOTENCY_CONFLICT`다. `run` target은 `targetId`가 없어야 하고 다른 target은 실제 결과에 존재하는 안정적 ID가 필요하다. 인증 사용자는 event를 직접 쓰거나 annotation table에 직접 insert/update/delete할 수 없고 `create_analysis_run_annotation` RPC만 사용할 수 있다. 개별 annotation `PATCH`·`DELETE` API는 제공하지 않으며 부모 실행·프로젝트 삭제 시에만 cascade한다.
+annotation 생성은 8~128자의 `Idempotency-Key`를 요구한다. 같은 키·같은 payload는 기존 행과 `200`, 같은 키에 다른 payload는 `409 IDEMPOTENCY_CONFLICT`다. `run` target은 `targetId`가 없어야 하고 다른 target은 실제 결과에 존재하는 안정적 ID가 필요하다. 인증 사용자는 event나 annotation table을 직접 변경할 수 없다. BFF만 `app_create_analysis_run_annotation`을 `service_role`로 호출하고 사용자 ID·프로젝트 소유권·실행 상태·target을 다시 검증한다. 개별 annotation `PATCH`·`DELETE` API는 제공하지 않으며 부모 실행·프로젝트 삭제 시에만 cascade한다.
 
 두 리소스는 공유 응답에 포함되지 않는다. API 응답도 annotation의 `created_by`, idempotency key, request fingerprint를 노출하지 않는다.
 
@@ -183,13 +182,13 @@ annotation 생성은 8~128자의 `Idempotency-Key`를 요구한다. 같은 키·
 
 생성 응답에서 평문 토큰은 한 번만 반환한다. UI는 `/share#token=…`을 만들며 fragment는 HTTP 요청·접근 로그에 전달되지 않는다. 공개 조회는 토큰을 JSON body로 보내고 IP당 시간당 60건으로 제한한다. 공유 응답은 `projectTitle`, 정제된 `result`, `completedAt`, `expiresAt`만 제공한다. 결과 내부의 프로젝트·실행·원문 ID, provider/model, token·latency 정보도 재귀적으로 제거한다.
 
-### 6.5 상태 확인과 호환 API
+### 6.5 상태 확인과 공개 분석 API
 
 - `GET /api/health/live`: 프로세스가 요청을 처리하면 `200`; `commit`은 `options.buildCommit`, `RENDER_GIT_COMMIT`, `SOURCE_VERSION` 중 검증된 7~40자 hex 또는 `null`
 - `GET /api/health/ready`: 필수 Supabase 설정과 DB 쿼리가 성공하면 `200`, 아니면 `503`
 - `GET /api/v1/capabilities`: OpenAI 기능 플래그와 기본 로컬 provider를 비밀정보 없이 반환
-- `POST /api/context-analysis`: 로컬 provider로 고정한 비영속 V1 호환 API. 이번 릴리스 뒤 제거 예정
-- `POST /api/context-analysis/import`: same-origin 공개 요청에서 카카오톡 TXT·Teams JSON·Notion JSON·일반 텍스트를 정규화하고 로컬 분석한다. DB에는 저장하지 않으며 IP당 시간당 20회, JSON 256KB, 정규화 후 20,000자 제한을 적용한다.
+- `POST /api/v1/public/context-analysis/import`: same-origin 공개 요청에서 카카오톡 TXT·Teams JSON·Notion JSON·일반 텍스트를 정규화하고 로컬 분석한다. DB에는 저장하지 않으며 IP당 시간당 20회, JSON 256KB, 분석 입력 20,000자 제한을 적용한다.
+- `POST /api/context-analysis`, `POST /api/context-analysis/import`: 제거된 호환 경로다. `410 LEGACY_ENDPOINT_REMOVED`와 versioned 대체 경로를 반환한다.
 
 ## 7. OpenAI provider
 

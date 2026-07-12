@@ -2,7 +2,7 @@
 
 Modu Brain은 회의록, 리서치, 피드백에 흩어진 결정 배경과 참여자 관점, 미결 질문을 원문 근거와 함께 구조화하는 협업 맥락 웹 앱입니다. 로그인 사용자는 프로젝트와 기록을 저장하고 분석 이력을 비교할 수 있으며, 특정 분석 결과만 만료 가능한 읽기 전용 링크로 공유할 수 있습니다. 카카오톡 TXT, Teams·Notion JSON, 직접 붙여넣기도 개인 계정 연결 없이 공통 기록으로 가져와 원문 백링크와 Obsidian형 브레인 캔버스에서 함께 확인할 수 있습니다.
 
-[공개 웹 데모](https://modu-brain-n031.ksjun29.chatgpt.site) · [Render 서비스](https://modu-brain-demo.onrender.com) · [독립 배포 가이드](docs/standalone-deployment.md)
+[공개 웹 데모](https://modu-brain-n031.ksjun29.chatgpt.site) · [내 저장소에서 새 Render 서비스 만들기](https://render.com/deploy?repo=https://github.com/tjwnsdhfz/modu-brain) · [독립 배포 가이드](docs/standalone-deployment.md)
 
 이 저장소는 `tjwnsdhfz/modu-brain`이 직접 소유하는 독립 저장소입니다. 기본 branch는 `main`이며, 조직 저장소의 maintainer 승인이나 포크 워크플로에 의존하지 않습니다. OpenAI 기능은 기본적으로 꺼져 있고 비용이 없는 `local-heuristic` 분석을 사용합니다.
 
@@ -28,8 +28,8 @@ flowchart LR
 - `/projects/:id`: 외부 맥락 가져오기, 기록, 분석 이력, 검색·필터·근거 탐색이 가능한 브레인 캔버스, 백링크, 온보딩, 공유
 - `/share#token=…`: 원문을 제외한 읽기 전용 분석 결과
 - `/api/v1/**`: HttpOnly 세션, 사용자 범위 RLS 읽기와 service-only 소유권 검증 쓰기가 적용된 영속 API
-- `/api/context-analysis`: 한 릴리스 동안 유지하는 비영속 호환 API
-- `/api/context-analysis/import`: 계정 없이 내보낸 기록을 정규화한 뒤 로컬 분석하는 same-origin 비영속 API
+- `/api/v1/public/context-analysis/import`: 계정 없이 내보낸 기록을 정규화한 뒤 로컬 분석하는 same-origin 비영속 API
+- `/api/context-analysis*`: 제거된 구형 경로. `410 LEGACY_ENDPOINT_REMOVED`와 대체 경로를 반환
 
 ## 로컬 실행
 
@@ -72,7 +72,7 @@ npm run start
 | `VITE_SUPABASE_URL` | 공개 번들 | 브라우저 Magic Link Auth URL |
 | `VITE_SUPABASE_PUBLISHABLE_KEY` | 공개 번들 | RLS로 보호되는 공개 publishable key |
 | `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `VITE_SUPABASE_ANON_KEY` | 호환 | 로컬 Supabase CLI의 legacy JWT key fallback |
-| `MODU_BRAIN_ANALYSIS_PROVIDER` | 서버 | 기본 `local-heuristic`; 호환 API의 provider 선택 |
+| `MODU_BRAIN_ANALYSIS_PROVIDER` | 서버 | 기본 `local-heuristic`; 영속 분석과 공개 가져오기 분석의 provider 선택 |
 | `MODU_BRAIN_OPENAI_ENABLED` | 서버 | `true`일 때만 인증된 V1 API에서 OpenAI 선택 허용. 기본 `false` |
 | `MODU_BRAIN_OPENAI_MODEL` | 서버 | 기본 `gpt-5.6-terra`; 계정의 preview 접근 권한 확인 필요 |
 | `MODU_BRAIN_OPENAI_REASONING_EFFORT` | 서버 | 기본 `low` |
@@ -98,7 +98,7 @@ SQL migration은 `supabase/migrations/`가 유일한 스키마 원본입니다. 
 - `share_links`: SHA-256으로 해시된 만료·폐기 가능 토큰
 - `rate_limit_buckets`: 사용자·IP별 AI/공유 조회 제한
 
-모든 앱 테이블은 RLS를 사용합니다. Magic Link token은 same-origin BFF가 즉시 HttpOnly 쿠키로 교환하며 Web Storage에 보관하지 않습니다. 읽기는 검증된 사용자 JWT와 RLS, 쓰기는 service-only `app_*` RPC의 사용자 ID·소유권 재검증을 함께 사용합니다. legacy Bearer 인증은 한 릴리스 동안만 호환하며, 다른 사용자 리소스는 존재 여부가 노출되지 않도록 `404`로 응답합니다. 공개 공유 API만 토큰 해시와 만료·폐기 상태를 서버에서 검증한 뒤 원문을 제외한 결과를 반환합니다.
+모든 앱 테이블은 RLS를 사용합니다. Magic Link token은 same-origin BFF가 즉시 HttpOnly·SameSite 쿠키로 교환하며 Web Storage에 보관하지 않습니다. 브라우저의 `/api/v1/**` 요청은 Bearer header를 만들지 않습니다. 읽기는 검증된 사용자 JWT와 RLS, 쓰기는 service-only `app_*` RPC의 사용자 ID·소유권 재검증을 함께 사용합니다. 다른 사용자 리소스는 존재 여부가 노출되지 않도록 `404`로 응답합니다. 공개 공유 API만 토큰 해시와 만료·폐기 상태를 서버에서 검증한 뒤 원문을 제외한 결과를 반환합니다.
 
 ## 분석 계약
 
@@ -129,7 +129,7 @@ GET|POST       /api/v1/analysis-runs/:runId/annotations
 GET|POST       /api/v1/analysis-runs/:runId/share-links
 DELETE         /api/v1/share-links/:shareLinkId
 POST           /api/v1/shared/resolve
-POST           /api/context-analysis/import
+POST           /api/v1/public/context-analysis/import
 GET            /api/v1/capabilities
 GET            /api/health/live
 GET            /api/health/ready
@@ -154,6 +154,7 @@ npm run test:e2e
 - 한국어 eval 30건: 회의·리서치·피드백·빈 근거·개인정보·prompt injection 문구를 유료 호출 없이 검증
 - Playwright: 공개 가져오기·모바일 메뉴·리플로우와 `로그인 → 프로젝트 → 외부 맥락 가져오기 → 분석 → 근거·백링크 → 이력 → 공유 → 새로고침`
 - GitHub Actions: lint, typecheck, coverage, build, production audit, secret scan, 공개 스모크, 내부 PR의 로컬 Supabase/E2E
+- GitHub Actions uptime: 6시간마다 공개 live endpoint를 확인하며, `MODU_BRAIN_MONITOR_TARGETS` 저장소 변수로 대상을 완전히 교체할 수 있습니다.
 
 ## Sites 배포
 
@@ -180,6 +181,10 @@ npm run test:e2e
 5. `GET /api/health/ready`가 `200`인지 확인한 뒤 공개합니다.
 
 Render는 `npm ci --include=dev && npm run build`, `npm start`, `HOST=0.0.0.0`을 사용하며 CI 성공 후 자동 배포합니다. build 단계에는 TypeScript/Vite 도구를 포함하고 runtime은 `NODE_ENV=production`을 유지합니다. readiness는 DB/config를 확인하므로 필수 환경변수가 없으면 의도적으로 `503`을 반환하고 배포 트래픽을 받지 않습니다. [Render Blueprint 문서](https://render.com/docs/blueprint-spec)
+
+## 무료 uptime 확인
+
+`.github/workflows/modu-brain-uptime.yml`은 6시간마다 `/api/health/live`만 호출합니다. GitHub 저장소의 **Settings → Secrets and variables → Actions → Variables**에 `MODU_BRAIN_MONITOR_TARGETS`를 쉼표로 구분한 HTTPS URL 목록으로 등록하면 기존 데모 주소를 사용하지 않고 새 Sites·Render 주소만 확인합니다. 수동 실행에서는 Actions의 **Modu Brain uptime → Run workflow**에서 같은 값을 일회성으로 덮어쓸 수 있습니다. 결과는 실행 요약과 14일 보존 artifact에 남고, 하나라도 실패하면 workflow가 실패합니다.
 
 ## 보안·개인정보 운영 기준
 

@@ -93,6 +93,7 @@ export type ImportContextInput = {
   provider: ExternalContextProvider;
   title?: string;
   text: string;
+  parserVersion?: string;
 };
 
 export type ContextImportResource = {

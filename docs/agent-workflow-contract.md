@@ -29,7 +29,7 @@
 
 각 단계는 append-only `started` 이벤트와 terminal 이벤트(`succeeded`, `failed`, `cancelled`)로 표현한다. 새 실행만 이벤트를 추가하며 idempotency로 재사용된 실행은 provider를 다시 호출하거나 이벤트를 덧붙이지 않는다.
 
-실행 시작과 스냅숏 생성은 `start_analysis_run` RPC의 짧은 트랜잭션에서 처리한다. provider 네트워크 호출 중에는 DB 트랜잭션을 유지하지 않는다.
+실행 시작과 스냅숏 생성은 service-only `app_start_analysis_run` RPC의 짧은 트랜잭션에서 처리한다. provider 네트워크 호출 중에는 DB 트랜잭션을 유지하지 않는다.
 
 ## 4. 단계 이벤트 계약
 
@@ -67,7 +67,6 @@ API:
 
 ```http
 GET /api/v1/analysis-runs/:runId/step-events
-Authorization: Bearer <access-token>
 ```
 
 응답은 `sequence` 오름차순이다. 다른 사용자 실행과 존재하지 않는 실행은 동일한 `404 NOT_FOUND`로 처리한다.
@@ -103,7 +102,6 @@ API:
 GET /api/v1/analysis-runs/:runId/annotations
 
 POST /api/v1/analysis-runs/:runId/annotations
-Authorization: Bearer <access-token>
 Idempotency-Key: <8..128 characters>
 Content-Type: application/json
 
@@ -123,9 +121,17 @@ Content-Type: application/json
 - `PATCH`와 개별 `DELETE`는 제공하지 않는다. 프로젝트 또는 실행을 사용자가 삭제할 때만 FK cascade로 함께 제거된다.
 - 응답은 `createdBy`, idempotency key, request fingerprint를 노출하지 않는다.
 
-DB 쓰기는 `create_analysis_run_annotation` RPC만 허용한다. RPC가 `auth.uid()`, 프로젝트 소유권, 실행 상태, 결과 target ID와 idempotency를 원자적으로 확인한다. 테이블의 직접 `INSERT`, `UPDATE`, `DELETE` 권한은 인증 사용자에게 부여하지 않는다.
+브라우저는 same-origin HttpOnly 쿠키로만 인증한다. DB 쓰기는 BFF가 호출하는 service-only `app_create_analysis_run_annotation` RPC만 허용한다. RPC가 전달받은 사용자 ID, 프로젝트 소유권, 실행 상태, 결과 target ID와 idempotency를 원자적으로 다시 확인한다. 테이블의 직접 `INSERT`, `UPDATE`, `DELETE` 및 구형 authenticated RPC 실행 권한은 인증 사용자에게 부여하지 않는다.
 
-## 6. 실패·취소·개인정보 계약
+## 6. 사용자에게 보이는 에이전트 검토 신호
+
+- 각 결정·질문·관점·핵심어는 정확히 일치한 원문 인용 수와 출처 수로 `low | medium | high` 근거 신뢰도를 계산한다.
+- 최근 성공 실행과 바로 이전 성공 실행의 결정은 안정적 ID와 문장 유사도로 연결해 `new | changed | stable | resolved` 상태를 만든다.
+- `resolved`는 자동으로 해결됐다는 뜻이 아니라 최신 실행에 나타나지 않는다는 뜻이며, UI에서 원문 확인이 필요하다고 명시한다.
+- 상반된 표현은 모순 확정이 아니라 “상충 가능성 검토 후보”로만 표시하고, 정확한 원문 근거로 이동할 수 있어야 한다.
+- 지식맵은 관찰 시각과 상태를 텍스트 범례로 표시하고 색만으로 의미를 전달하지 않는다.
+
+## 7. 실패·취소·개인정보 계약
 
 - 클라이언트 연결 종료는 AbortSignal로 provider까지 전달하고 실행과 활성 단계를 `cancelled`로 종료한다.
 - provider·DB 내부 메시지와 응답 본문은 이벤트, annotation 또는 API 오류에 저장하지 않는다.
@@ -134,7 +140,7 @@ DB 쓰기는 `create_analysis_run_annotation` RPC만 허용한다. RPC가 `auth.
 - annotation은 공유 projection과 모델 입력에서 제외한다.
 - 이벤트와 annotation RLS는 실행·프로젝트 소유자를 재검증하며 IDOR 탐색을 허용하지 않는다.
 
-## 7. 필수 회귀 테스트
+## 8. 필수 회귀 테스트
 
 - 정상 실행에서 4단계의 시작·성공 이벤트 순서와 안전한 지표 확인
 - provider 실패·요청 취소에서 안전한 terminal event와 원문 오류 비노출 확인

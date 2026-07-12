@@ -10,7 +10,7 @@ import {
 const ID = "22222222-2222-4222-8222-222222222222";
 
 describe("Modu Brain PostgREST repository", () => {
-  it("covers owner-scoped reads and the two authenticated compatibility RPCs", async () => {
+  it("covers owner-scoped reads and service-only import and annotation RPCs", async () => {
     const project = { id: ID, title: "project" };
     const source = { id: ID, project_id: ID, content: "text" };
     const run = { id: ID, project_id: ID, analysis_run_sources: [{ source_record_id: ID }] };
@@ -20,10 +20,10 @@ describe("Modu Brain PostgREST repository", () => {
     const annotation = { id: ID, analysis_run_id: ID, annotation_type: "note" };
     const share = { id: ID, analysis_run_id: ID };
     const request = vi.fn(async (path) => {
-      if (path === "rpc/create_analysis_run_annotation") {
+      if (path === "rpc/app_create_analysis_run_annotation") {
         return [{ outcome: "created", annotation }];
       }
-      if (path === "rpc/import_source_context") {
+      if (path === "rpc/app_import_source_context") {
         return { source, import_id: ID, provider: "paste", segment_count: 1 };
       }
       if (path.startsWith("projects")) return [project];
@@ -37,6 +37,7 @@ describe("Modu Brain PostgREST repository", () => {
       return [];
     });
     const repository = createModuBrainRepository({ request });
+    const serviceRepository = createModuBrainServiceRepository({ request });
 
     await expect(repository.ready()).resolves.toBe(true);
     await expect(repository.listProjects()).resolves.toEqual([project]);
@@ -45,7 +46,7 @@ describe("Modu Brain PostgREST repository", () => {
 
     await expect(repository.listSources(ID)).resolves.toEqual([source]);
     await expect(
-      repository.importSourceContext(ID, {
+      serviceRepository.importSourceContext("user-id", ID, {
         kind: "note",
         title: "import",
         content: "text",
@@ -68,7 +69,7 @@ describe("Modu Brain PostgREST repository", () => {
     await expect(repository.listRunStepEvents(ID)).resolves.toEqual([stepEvent]);
     await expect(repository.listRunAnnotations(ID)).resolves.toEqual([annotation]);
     await expect(
-      repository.createRunAnnotation(ID, {
+      serviceRepository.createRunAnnotation(ID, "user-id", {
         idempotencyKey: "annotation-key",
         annotationType: "note",
         targetType: "run",
@@ -79,17 +80,25 @@ describe("Modu Brain PostgREST repository", () => {
 
     await expect(repository.listShareLinks(ID)).resolves.toEqual([share]);
     expect(request).toHaveBeenCalledWith(
-      "rpc/import_source_context",
+      "rpc/app_import_source_context",
       expect.objectContaining({
         method: "POST",
-        body: expect.objectContaining({ p_project_id: ID, p_provider: "paste" }),
+        body: expect.objectContaining({
+          p_user_id: "user-id",
+          p_project_id: ID,
+          p_provider: "paste",
+        }),
       }),
     );
     expect(request).toHaveBeenCalledWith(
-      "rpc/create_analysis_run_annotation",
+      "rpc/app_create_analysis_run_annotation",
       expect.objectContaining({
         method: "POST",
-        body: expect.objectContaining({ p_analysis_run_id: ID, p_target_type: "run" }),
+        body: expect.objectContaining({
+          p_user_id: "user-id",
+          p_analysis_run_id: ID,
+          p_target_type: "run",
+        }),
       }),
     );
   });

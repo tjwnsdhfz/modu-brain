@@ -21,6 +21,68 @@ describe("thoughtGraph", () => {
     expect(graph.edges.some((edge) => edge.relation === "시각화 위험 제기")).toBe(true);
   });
 
+  it("adds temporal lifecycle, confidence, resolved history, and contradiction metadata", () => {
+    const previous = {
+      ...sampleAnalysis,
+      summary: { ...sampleAnalysis.summary, generatedAt: "2026-07-10T00:00:00.000Z" },
+      decisions: [
+        {
+          ...sampleAnalysis.decisions[0],
+          id: "sharing",
+          decision: "외부 공유 링크를 허용한다.",
+          reason: "데모 접근성을 높인다.",
+        },
+        {
+          ...sampleAnalysis.decisions[1],
+          id: "removed",
+          decision: "파일 업로드를 검토한다.",
+        },
+      ],
+    };
+    const latest = {
+      ...sampleAnalysis,
+      summary: { ...sampleAnalysis.summary, generatedAt: "2026-07-11T00:00:00.000Z" },
+      decisions: [
+        {
+          ...previous.decisions[0],
+          reason: "공개 데모 접근성을 높인다.",
+          agentConfidence: {
+            score: 0.86,
+            level: "high" as const,
+            rationale: "원문 2개에서 근거를 확인했습니다.",
+            evidenceCount: 2,
+            sourceCount: 2,
+          },
+        },
+        {
+          ...sampleAnalysis.decisions[2],
+          id: "sharing-denied",
+          decision: "외부 공유 링크를 금지한다.",
+          reason: "보안을 우선한다.",
+        },
+      ],
+    };
+
+    const graph = buildThoughtGraph(latest, { previousResult: previous });
+    const changed = graph.nodes.find((node) => node.label === "외부 공유 링크를 허용한다.");
+    const contradiction = graph.nodes.find((node) => node.label === "외부 공유 링크를 금지한다.");
+    const resolved = graph.nodes.find((node) => node.label === "파일 업로드를 검토한다.");
+
+    expect(changed).toMatchObject({
+      lifecycle: "changed",
+      observedAt: "2026-07-11T00:00:00.000Z",
+      previousObservedAt: "2026-07-10T00:00:00.000Z",
+      agentConfidence: { level: "high" },
+    });
+    expect(changed?.contradictionIds).toHaveLength(1);
+    expect(contradiction).toMatchObject({ lifecycle: "new" });
+    expect(contradiction?.contradictionIds).toEqual(changed?.contradictionIds);
+    expect(resolved).toMatchObject({
+      lifecycle: "resolved",
+      observedAt: "2026-07-10T00:00:00.000Z",
+    });
+  });
+
   it("ignores orphan links from legacy maps", () => {
     const graph = buildThoughtGraph({
       nodes: [{ id: "topic", label: "주제", type: "topic", summary: "중심" }],

@@ -96,23 +96,24 @@ describe("static preview server", () => {
     );
   });
 
-  it("keeps the unauthenticated legacy analysis endpoint local even when the env requests OpenAI", async () => {
+  it("keeps the versioned public import analysis local even when the env requests OpenAI", async () => {
     vi.stubEnv("MODU_BRAIN_ANALYSIS_PROVIDER", "openai");
     vi.stubEnv("OPENAI_API_KEY", "");
     try {
-      const response = await fetch(`${baseUrl}/api/context-analysis`, {
+      const response = await fetch(`${baseUrl}/api/v1/public/context-analysis/import`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          projectTitle: "레거시 안전성",
-          rawText:
+          provider: "paste",
+          title: "공개 분석 안전성",
+          text:
             "민지는 공개 엔드포인트에서는 유료 모델을 호출하지 말자고 말했다. 팀은 로컬 분석만 사용하기로 결정했다. " +
             "다음 회의에서는 인증된 프로젝트 분석 흐름을 별도로 검증해야 한다. 이 기록은 충분한 입력 길이를 확보하기 위한 안전성 테스트 문장이다.",
         }),
       });
       expect(response.status).toBe(200);
       await expect(response.json()).resolves.toMatchObject({
-        provider: { name: "local-heuristic", usedExternalModel: false },
+        result: { provider: { name: "local-heuristic", usedExternalModel: false } },
       });
     } finally {
       vi.unstubAllEnvs();
@@ -136,13 +137,14 @@ describe("static preview server", () => {
 
     try {
       const response = await nodeFetch(
-        `http://127.0.0.1:${address.port}/api/context-analysis`,
+        `http://127.0.0.1:${address.port}/api/v1/public/context-analysis/import`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            projectTitle: "Persistent limiter",
-            rawText:
+            provider: "paste",
+            title: "Persistent limiter",
+            text:
               "A sufficiently long collaboration record is supplied for the local analysis path. ".repeat(3),
           }),
         },
@@ -153,9 +155,9 @@ describe("static preview server", () => {
         expect.objectContaining({
           method: "POST",
           body: expect.objectContaining({
-            p_scope: "public-analysis:hour",
+            p_scope: "public-import:hour",
             p_subject_hash: expect.stringMatching(/^[a-f0-9]{64}$/),
-            p_limit: 30,
+            p_limit: 20,
             p_window_seconds: 3600,
           }),
           signal: expect.any(AbortSignal),
@@ -249,10 +251,14 @@ describe("static preview server", () => {
     await new Promise((resolve) => accountServer.listen(0, "127.0.0.1", resolve));
     const address = accountServer.address();
     const url = `http://127.0.0.1:${address.port}/api/v1/account`;
+    const cookie = [
+      "modu_brain_access=private-access-token",
+      `modu_brain_expires=${Date.now() + 3_600_000}`,
+    ].join("; ");
 
     try {
       const exported = await fetch(`${url}/export`, {
-        headers: { Authorization: "Bearer private-access-token" },
+        headers: { Cookie: cookie },
       });
       expect(exported.status).toBe(200);
       const exportBody = await exported.json();
@@ -272,7 +278,8 @@ describe("static preview server", () => {
       const deleted = await fetch(url, {
         method: "DELETE",
         headers: {
-          Authorization: "Bearer private-access-token",
+          Cookie: cookie,
+          Origin: new URL(url).origin,
           "X-Confirm-Account-Delete": "delete my account",
         },
       });
@@ -308,6 +315,7 @@ describe("static preview server", () => {
     const response = await fetch(`${baseUrl}/api/v1/telemetry`, {
       method: "POST",
       headers: {
+        Origin: baseUrl,
         "Content-Type": "application/json",
         "CF-Ray": "safe-ray-1",
         "Rndr-Id": "safe-render-1",
@@ -394,12 +402,13 @@ describe("static preview server", () => {
     });
     await new Promise((resolve) => drainingServer.listen(0, "127.0.0.1", resolve));
     const address = drainingServer.address();
-    const pending = fetch(`http://127.0.0.1:${address.port}/api/context-analysis`, {
+    const pending = fetch(`http://127.0.0.1:${address.port}/api/v1/public/context-analysis/import`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        projectTitle: "Graceful drain",
-        rawText: "This is a sufficiently long analysis record for graceful shutdown testing. ".repeat(4),
+        provider: "paste",
+        title: "Graceful drain",
+        text: "This is a sufficiently long analysis record for graceful shutdown testing. ".repeat(4),
       }),
     });
 

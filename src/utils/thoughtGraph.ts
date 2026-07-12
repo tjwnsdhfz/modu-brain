@@ -1,9 +1,12 @@
 import type {
+  AgentConfidence,
   ContextAnalysisResult,
+  DecisionLifecycleStatus,
   EvidenceRef,
   KnowledgeNode,
   NodeType,
 } from "../types/context";
+import { deriveAgentInsights } from "./agentInsights";
 
 export type ThoughtKind = "topic" | "perspective" | "decision" | "question" | "term";
 
@@ -13,6 +16,11 @@ export type ThoughtNode = {
   label: string;
   summary: string;
   evidence: EvidenceRef[];
+  agentConfidence?: AgentConfidence;
+  lifecycle?: DecisionLifecycleStatus;
+  observedAt?: string;
+  previousObservedAt?: string;
+  contradictionIds?: string[];
 };
 
 export type ThoughtEdge = {
@@ -28,6 +36,10 @@ export type ThoughtGraph = {
 };
 
 export type ThoughtGraphResult = Omit<ContextAnalysisResult, "provider">;
+
+export type ThoughtGraphOptions = {
+  previousResult?: ThoughtGraphResult;
+};
 
 export type ThoughtPosition = { x: number; y: number };
 
@@ -58,10 +70,27 @@ const clusterBounds: Record<Exclude<ThoughtKind, "topic">, {
 
 export function buildThoughtGraph(
   input: ThoughtGraphResult | ContextAnalysisResult["knowledgeMap"],
+  options: ThoughtGraphOptions = {},
 ): ThoughtGraph {
   if (!("knowledgeMap" in input)) return buildFromKnowledgeMap(input);
 
   const result = input;
+  const insights = deriveAgentInsights(options.previousResult, result);
+  const lifecycleByCurrentIndex = new Map(
+    insights.decisionLifecycle
+      .filter((item) => item.currentIndex !== undefined)
+      .map((item) => [item.currentIndex as number, item]),
+  );
+  const contradictionIdsByLabel = new Map<string, string[]>();
+  insights.contradictions.forEach((candidate) => {
+    for (const label of [candidate.leftLabel, candidate.rightLabel]) {
+      const key = normalize(label);
+      contradictionIdsByLabel.set(key, [
+        ...(contradictionIdsByLabel.get(key) ?? []),
+        candidate.id,
+      ]);
+    }
+  });
   const map = result.knowledgeMap ?? { nodes: [], links: [] };
   const topicNode = map.nodes.find((node) => node.type === "topic");
   const root: ThoughtNode = {
@@ -73,6 +102,8 @@ export function buildThoughtGraph(
       result.summary?.overview?.[0] ||
       "기록에서 확인한 생각을 한곳에 연결한 중심 주제입니다.",
     evidence: topicNode?.evidence ?? [],
+    agentConfidence: topicNode?.agentConfidence,
+    observedAt: result.summary?.generatedAt,
   };
 
   const participants = (result.participants ?? []).map<ThoughtNode>((item, index) => ({
@@ -81,20 +112,48 @@ export function buildThoughtGraph(
     label: item.actor || `참여자 ${index + 1}`,
     summary: joinSummary([item.role, item.focus, item.concern]),
     evidence: item.evidence ?? [],
+    agentConfidence: item.agentConfidence,
+    observedAt: result.summary?.generatedAt,
   }));
-  const decisions = (result.decisions ?? []).map<ThoughtNode>((item, index) => ({
-    id: thoughtId("decision", item.id || `${item.decision}-${index}`),
-    kind: "decision",
-    label: item.decision || `결정 ${index + 1}`,
-    summary: joinSummary([statusLabel(item.status), item.reason]),
-    evidence: item.evidence ?? [],
-  }));
+  const decisions = (result.decisions ?? []).map<ThoughtNode>((item, index) => {
+    const lifecycle = lifecycleByCurrentIndex.get(index);
+    return {
+      id: thoughtId("decision", item.id || `${item.decision}-${index}`),
+      kind: "decision",
+      label: item.decision || `결정 ${index + 1}`,
+      summary: joinSummary([statusLabel(item.status), item.reason]),
+      evidence: item.evidence ?? [],
+      agentConfidence: item.agentConfidence,
+      lifecycle: lifecycle?.status,
+      observedAt: lifecycle?.observedAt ?? result.summary?.generatedAt,
+      previousObservedAt: lifecycle?.previousObservedAt,
+      contradictionIds: contradictionIdsByLabel.get(normalize(item.decision)),
+    };
+  });
+  const resolvedDecisions = insights.decisionLifecycle.flatMap<ThoughtNode>((lifecycle) => {
+    if (lifecycle.status !== "resolved" || lifecycle.previousIndex === undefined) return [];
+    const previous = options.previousResult?.decisions[lifecycle.previousIndex];
+    if (!previous) return [];
+    return [{
+      id: thoughtId("decision", `resolved-${lifecycle.previousId || lifecycle.id}`),
+      kind: "decision",
+      label: previous.decision,
+      summary: joinSummary(["이전 분석 이후 해결되었거나 더 이상 감지되지 않음", previous.reason]),
+      evidence: previous.evidence ?? [],
+      agentConfidence: previous.agentConfidence,
+      lifecycle: "resolved",
+      observedAt: lifecycle.previousObservedAt,
+      previousObservedAt: lifecycle.previousObservedAt,
+    }];
+  });
   const questions = (result.questions ?? []).map<ThoughtNode>((item, index) => ({
     id: thoughtId("question", item.id || `${item.question}-${index}`),
     kind: "question",
     label: item.question || `질문 ${index + 1}`,
     summary: joinSummary([item.reason, item.ownerHint ? `확인: ${item.ownerHint}` : ""]),
     evidence: item.evidence ?? [],
+    agentConfidence: item.agentConfidence,
+    observedAt: result.summary?.generatedAt,
   }));
   const terms = (result.keyTerms ?? []).map<ThoughtNode>((item, index) => ({
     id: thoughtId("term", item.id || `${item.term}-${index}`),
@@ -102,9 +161,11 @@ export function buildThoughtGraph(
     label: item.term || `핵심어 ${index + 1}`,
     summary: item.meaning || "분석에서 반복해 확인된 핵심 개념입니다.",
     evidence: item.evidence ?? [],
+    agentConfidence: item.agentConfidence,
+    observedAt: result.summary?.generatedAt,
   }));
 
-  const nodes = [root, ...participants, ...decisions, ...questions, ...terms];
+  const nodes = [root, ...participants, ...decisions, ...resolvedDecisions, ...questions, ...terms];
   const mappedIds = mapMapNodes(map.nodes, root, participants, decisions, questions);
   const additionalNodes: ThoughtNode[] = [];
 
@@ -118,6 +179,11 @@ export function buildThoughtGraph(
       label: node.label || `연결된 생각 ${index + 1}`,
       summary: node.summary || "분석 지식맵에서 확인된 연결 정보입니다.",
       evidence: node.evidence ?? [],
+      agentConfidence: node.agentConfidence,
+      lifecycle: node.lifecycle,
+      observedAt: node.observedAt ?? result.summary?.generatedAt,
+      previousObservedAt: node.previousObservedAt,
+      contradictionIds: node.contradictionIds,
     });
   });
   nodes.push(...additionalNodes);
@@ -196,6 +262,11 @@ function buildFromKnowledgeMap(map: ContextAnalysisResult["knowledgeMap"]): Thou
     label: node.label || `연결된 생각 ${index + 1}`,
     summary: node.summary || "분석 지식맵에서 확인된 연결 정보입니다.",
     evidence: node.evidence ?? [],
+    agentConfidence: node.agentConfidence,
+    lifecycle: node.lifecycle,
+    observedAt: node.observedAt,
+    previousObservedAt: node.previousObservedAt,
+    contradictionIds: node.contradictionIds,
   }));
   const idMap = new Map(map.nodes.map((node, index) => [node.id, nodes[index].id]));
   const edges: ThoughtEdge[] = [];

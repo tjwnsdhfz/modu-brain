@@ -229,7 +229,8 @@ export function createApiV1Handler(options = {}) {
         await handleContextImport(
           req,
           res,
-          repository,
+          await resolveServiceRepository(options, gateway, user, req),
+          user,
           requireUuid(match[1], "projectId"),
         );
         return true;
@@ -335,6 +336,10 @@ export function createApiV1Handler(options = {}) {
           req,
           res,
           repository,
+          req.method === "POST"
+            ? await resolveServiceRepository(options, gateway, user, req)
+            : null,
+          user,
           requireUuid(match[1], "runId"),
         );
         return true;
@@ -524,7 +529,7 @@ function hasSourceImport(source) {
     : Boolean(source?.source_imports);
 }
 
-async function handleContextImport(req, res, repository, projectId) {
+async function handleContextImport(req, res, serviceRepository, user, projectId) {
   if (!allowOnly(req, res, ["POST"])) return;
   const normalized = normalizeContextImport(await readJson(req));
   const title = boundedString(normalized.title, "title", 1, 120);
@@ -535,7 +540,7 @@ async function handleContextImport(req, res, repository, projectId) {
     INPUT_CHARACTER_LIMIT,
     false,
   );
-  const imported = await repository.importSourceContext(projectId, {
+  const imported = await serviceRepository.importSourceContext(user.id, projectId, {
     kind: normalized.kind,
     title,
     content,
@@ -885,7 +890,14 @@ async function handleAnalysisRunStepEvents(req, res, repository, runId) {
   writeData(res, 200, rows.map(analysisRunStepEventResource));
 }
 
-async function handleAnalysisRunAnnotations(req, res, repository, runId) {
+async function handleAnalysisRunAnnotations(
+  req,
+  res,
+  repository,
+  serviceRepository,
+  user,
+  runId,
+) {
   if (!allowOnly(req, res, ["GET", "POST"])) return;
   if (req.method === "GET") {
     const rows = await repository.listRunAnnotations(runId);
@@ -895,7 +907,7 @@ async function handleAnalysisRunAnnotations(req, res, repository, runId) {
 
   const idempotencyKey = requireIdempotencyKey(req);
   const values = validateRunAnnotation(await readJson(req));
-  const created = await repository.createRunAnnotation(runId, {
+  const created = await serviceRepository.createRunAnnotation(runId, user.id, {
     idempotencyKey,
     ...values,
   });
@@ -1478,24 +1490,17 @@ function assertObject(value) {
 }
 
 async function authenticateApiRequest(req, res, options, gateway) {
-  const hasAuthorization = typeof req.headers.authorization === "string";
-  if (!hasAuthorization) {
-    const cookies = readAuthSessionCookies(req);
-    if (cookies.accessToken || cookies.refreshToken) {
-      const session = await restoreCookieSession(req, res, options, gateway);
-      return {
-        ...session.user,
-        accessToken: session.accessToken,
-      };
-    }
+  if (typeof req.headers.authorization === "string") {
+    throw new ApiError(
+      401,
+      "BEARER_AUTH_UNSUPPORTED",
+      "Bearer authentication is no longer accepted. Use the same-origin cookie session.",
+    );
   }
-  const accessToken = bearerToken(req);
-  const user = options.authenticate
-    ? await options.authenticate(req, accessToken)
-    : await gateway.authenticate(accessToken, { signal: req.moduBrainSignal });
+  const session = await restoreCookieSession(req, res, options, gateway);
   return {
-    ...user,
-    accessToken: user?.accessToken || accessToken,
+    ...session.user,
+    accessToken: session.accessToken,
   };
 }
 
@@ -1554,22 +1559,14 @@ async function settleWithin(promise, requestedTimeoutMs) {
   }
 }
 
-function bearerToken(req) {
-  const authorization = String(req.headers.authorization || "");
-  const match = authorization.match(/^Bearer\s+(.+)$/i);
-  if (!match) throw new ApiError(401, "AUTH_REQUIRED", "로그인이 필요합니다.");
-  return match[1];
-}
-
 function assertSameOrigin(req) {
   const origin = req.headers.origin;
   if (!origin) {
-    const hasAuthorization = typeof req.headers.authorization === "string";
-    const cookies = readAuthSessionCookies(req);
-    if (!hasAuthorization && (cookies.accessToken || cookies.refreshToken)) {
-      throw new ApiError(403, "ORIGIN_NOT_ALLOWED", "요청 출처가 허용되지 않습니다.");
-    }
-    return;
+    throw new ApiError(
+      403,
+      "ORIGIN_NOT_ALLOWED",
+      "A same-origin request is required for mutations.",
+    );
   }
   // Host is defined by the actual HTTP request target. A client-controlled
   // X-Forwarded-Host must never redefine the same-origin security boundary.

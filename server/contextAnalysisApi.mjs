@@ -5,11 +5,7 @@ import { normalizeContextImport } from "./contextImport.mjs";
 import { createRequestAbortContext, setApiHeaders } from "./httpJson.mjs";
 import { rateLimitIdentifier } from "./security.mjs";
 
-// rawText is limited by characters in the domain validator. Keep enough byte
-// headroom for 20,000 Korean characters plus the surrounding JSON payload.
-const MAX_REQUEST_BODY_BYTES = 100_000;
 const MAX_IMPORT_REQUEST_BODY_BYTES = 256 * 1024;
-const PUBLIC_ANALYSIS_LIMIT = 30;
 const PUBLIC_IMPORT_LIMIT = 20;
 const PUBLIC_WINDOW_SECONDS = 60 * 60;
 const PUBLIC_WINDOW_MS = PUBLIC_WINDOW_SECONDS * 1000;
@@ -19,11 +15,17 @@ const CLEANUP_INTERVAL_MS = 60_000;
 const publicRateLimitBuckets = new Map();
 let nextMemoryCleanupAt = 0;
 
+export const PUBLIC_CONTEXT_IMPORT_PATH = "/api/v1/public/context-analysis/import";
+const LEGACY_CONTEXT_PATHS = new Set([
+  "/api/context-analysis",
+  "/api/context-analysis/import",
+]);
+
 export function createContextAnalysisApiMiddleware(options = {}) {
   return async function contextAnalysisApiMiddleware(req, res, next) {
     const pathname = (req.url || "").split("?")[0];
 
-    if (!["/api/context-analysis", "/api/context-analysis/import"].includes(pathname)) {
+    if (![...LEGACY_CONTEXT_PATHS, PUBLIC_CONTEXT_IMPORT_PATH].includes(pathname)) {
       next();
       return;
     }
@@ -35,8 +37,34 @@ export function createContextAnalysisApiMiddleware(options = {}) {
 export async function handleContextAnalysisRequest(req, res, options = {}) {
   setApiHeaders(res);
   const pathname = (req.url || "").split("?")[0];
-  const isImportRequest = pathname === "/api/context-analysis/import";
 
+  if (LEGACY_CONTEXT_PATHS.has(pathname)) {
+    if (req.method === "OPTIONS") {
+      res.setHeader("Allow", "POST, OPTIONS");
+      res.statusCode = 204;
+      res.end();
+      return;
+    }
+    const replacement = pathname.endsWith("/import")
+      ? PUBLIC_CONTEXT_IMPORT_PATH
+      : "/api/v1/projects/:projectId/analysis-runs";
+    res.setHeader("Link", `<${replacement}>; rel="successor-version"`);
+    writeJson(res, 410, {
+      error: {
+        code: "LEGACY_ENDPOINT_REMOVED",
+        message: "This compatibility endpoint has been removed. Use the versioned API.",
+        details: { replacement },
+      },
+    });
+    return;
+  }
+
+  if (pathname !== PUBLIC_CONTEXT_IMPORT_PATH) {
+    writeJson(res, 404, {
+      error: { code: "NOT_FOUND", message: "API route not found." },
+    });
+    return;
+  }
   if (req.method === "OPTIONS") {
     res.statusCode = 204;
     res.end();
@@ -68,24 +96,17 @@ export async function handleContextAnalysisRequest(req, res, options = {}) {
       );
     }
 
-    if (isImportRequest) {
-      assertSameOrigin(req);
-    }
+    assertSameOrigin(req);
 
-    await enforcePublicRateLimit(req, options, {
-      isImportRequest,
-      signal: abortContext.signal,
-    });
+    await enforcePublicImportRateLimit(req, options, abortContext.signal);
 
-    const payload = await readJsonBody(
-      req,
-      isImportRequest ? MAX_IMPORT_REQUEST_BODY_BYTES : MAX_REQUEST_BODY_BYTES,
-    );
+    const payload = await readJsonBody(req, MAX_IMPORT_REQUEST_BODY_BYTES);
     const analyze = options.analyze || analyzeProjectContext;
-    const normalizedImport = isImportRequest ? normalizeContextImport(payload) : null;
-    const analysisPayload = normalizedImport
-      ? { projectTitle: normalizedImport.title, rawText: normalizedImport.content }
-      : payload;
+    const normalizedImport = normalizeContextImport(payload);
+    const analysisPayload = {
+      projectTitle: normalizedImport.title,
+      rawText: normalizedImport.content,
+    };
     const result = await analyze(analysisPayload, {
       ...(options.analysisOptions || {}),
       signal: abortContext.signal,
@@ -94,18 +115,16 @@ export async function handleContextAnalysisRequest(req, res, options = {}) {
     writeJson(
       res,
       200,
-      normalizedImport
-        ? {
-            import: {
-              provider: normalizedImport.provider,
-              title: normalizedImport.title,
-              content: normalizedImport.content,
-              participantCount: normalizedImport.participants.length,
-              segmentCount: normalizedImport.segments.length,
-            },
-            result,
-          }
-        : result,
+      {
+        import: {
+          provider: normalizedImport.provider,
+          title: normalizedImport.title,
+          content: normalizedImport.content,
+          participantCount: normalizedImport.participants.length,
+          segmentCount: normalizedImport.segments.length,
+        },
+        result,
+      },
     );
   } catch (error) {
     if (abortContext.signal.aborted && (req.aborted || res.destroyed)) return;
@@ -140,7 +159,7 @@ export async function handleContextAnalysisRequest(req, res, options = {}) {
       : error;
 
     if (apiError instanceof ContextAnalysisApiError) {
-      if (["PUBLIC_IMPORT_RATE_LIMITED", "PUBLIC_ANALYSIS_RATE_LIMITED"].includes(apiError.code)) {
+      if (apiError.code === "PUBLIC_IMPORT_RATE_LIMITED") {
         res.setHeader("Retry-After", "3600");
       }
       writeJson(res, apiError.status, {
@@ -171,7 +190,7 @@ function writeJson(res, statusCode, payload) {
   res.end(JSON.stringify(payload));
 }
 
-function readJsonBody(req, maxBytes = MAX_REQUEST_BODY_BYTES) {
+function readJsonBody(req, maxBytes = MAX_IMPORT_REQUEST_BODY_BYTES) {
   return new Promise((resolve, reject) => {
     let body = "";
     let bodyBytes = 0;
@@ -251,9 +270,9 @@ function assertSameOrigin(req) {
   }
 }
 
-async function enforcePublicRateLimit(req, options, context) {
-  const scope = context.isImportRequest ? "public-import:hour" : "public-analysis:hour";
-  const limit = context.isImportRequest ? PUBLIC_IMPORT_LIMIT : PUBLIC_ANALYSIS_LIMIT;
+async function enforcePublicImportRateLimit(req, options, signal) {
+  const scope = "public-import:hour";
+  const limit = PUBLIC_IMPORT_LIMIT;
   const now = Date.now();
   const subjectHash = rateLimitIdentifier(req, {
     platform: options.trustedProxyPlatform,
@@ -270,9 +289,9 @@ async function enforcePublicRateLimit(req, options, context) {
       limit,
       windowSeconds: PUBLIC_WINDOW_SECONDS,
       now,
-      signal: context.signal,
+      signal,
     });
-  } else if (context.isImportRequest && typeof options.consumeImportRateLimit === "function") {
+  } else if (typeof options.consumeImportRateLimit === "function") {
     allowed = await options.consumeImportRateLimit(subjectHash, now);
   } else if (allowMemoryFallback(options)) {
     allowed = consumeMemoryRateLimit(`${scope}:${subjectHash}`, limit, now);
@@ -287,7 +306,7 @@ async function enforcePublicRateLimit(req, options, context) {
   if (!allowed) {
     throw new ContextAnalysisApiError(
       429,
-      context.isImportRequest ? "PUBLIC_IMPORT_RATE_LIMITED" : "PUBLIC_ANALYSIS_RATE_LIMITED",
+      "PUBLIC_IMPORT_RATE_LIMITED",
       "The hourly public request limit has been reached. Try again later.",
     );
   }
