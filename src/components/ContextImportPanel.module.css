@@ -304,7 +304,7 @@
 
 .previewHeading p {
   margin: 0 0 4px;
-  color: var(--color-primary);
+  color: var(--color-link);
   font-size: 14px;
   font-weight: 700;
 }
