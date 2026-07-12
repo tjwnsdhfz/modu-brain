@@ -1,4 +1,4 @@
--- Contract phase. Apply only after every deployed runtime uses the app_* RPCs.
+-- Contract phase. Applied after every deployed runtime moved to the app_* RPCs.
 
 begin;
 

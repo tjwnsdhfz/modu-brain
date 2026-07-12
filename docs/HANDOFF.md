@@ -6,7 +6,7 @@
 
 - 독립 저장소: `https://github.com/tjwnsdhfz/modu-brain`
 - 기준 브랜치: `main`
-- 작업 브랜치: `agent/standalone-v2-hardening`
+- 배포 후 기록 브랜치: `agent/post-deploy-ledger`
 - 패키지 버전: `2.0.0`
 - 원래 챌린지 저장소 `hub-N031`은 이 작업에서 수정하지 않았다.
 
@@ -34,15 +34,17 @@
 - TypeScript와 production Sites/Node build 통과
 - `git diff --check` 통과
 
-로컬 Docker daemon이 실행되지 않아 `supabase test db`는 GitHub의 Supabase job에서 확인해야 한다.
+GitHub Actions의 Supabase job에서 migration 적용·롤백·재적용, pgTAP RLS, 로그인 E2E를 모두 통과했다.
 
 ## 운영 Supabase 적용 상태
 
 - project ref: `tduqhanlwjksfrxkareu`
 - expand `20260712031058_app_import_and_annotation_boundary` 적용 완료
 - 새 `app_*` 함수는 `service_role`만 실행 가능함을 확인
-- 구형 두 authenticated RPC는 현재 서비스 보호를 위해 아직 실행 가능
-- contract `20260712031100_revoke_authenticated_compatibility_rpcs`는 새 코드 배포와 로그인 smoke 뒤에만 적용
+- 구형 두 authenticated RPC의 `public`·`anon`·`authenticated` 실행 권한 회수 완료
+- contract `20260712054932_revoke_authenticated_compatibility_rpcs` 적용 완료
+
+Security Advisor에는 service-only `rate_limit_buckets`의 정책 없음 INFO 한 건만 남아 있다. 이 테이블은 서버만 사용하므로 의도된 상태다.
 
 고정 순서:
 
@@ -59,10 +61,13 @@ expand 완료
 ## 배포 메모
 
 - Sites project id: `appgprj_6a51d54ffb648191b12e9d4a5a3c173c`
-- 공개 URL: `https://modu-brain-n031.ksjun29.chatgpt.site`
+- Sites v15: `https://modu-brain-n031.ksjun29.chatgpt.site`
 - 독립 Render Blueprint 서비스 이름: `modu-brain-tjwnsdhfz`
-- uptime 대상은 GitHub repository variable `MODU_BRAIN_MONITOR_TARGETS`로 교체 가능
+- Render URL: `https://modu-brain-tjwnsdhfz.onrender.com`
+- 배포 커밋: `cc4ecb3821f4910a3d4ffd18ec1fd4b478fff146`
+- PR `#1` 병합 완료, `main`은 5개 필수 검사와 PR 규칙으로 보호됨
+- 두 배포 모두 live/ready `200`, 공개 가져오기 `200`, 구형 API `410` 확인
 
 ## 재개 문장
 
-`modu-brain-standalone/docs/HANDOFF.md를 읽고, PR CI와 Sites/Render 배포 상태를 확인한 뒤 로그인 가져오기·annotation smoke를 통과하면 contract migration을 적용해 주세요.`
+`modu-brain-standalone/docs/HANDOFF.md를 읽고, post-deploy ledger PR과 uptime workflow 상태를 확인한 뒤 다음 제품 증분을 진행해 주세요.`

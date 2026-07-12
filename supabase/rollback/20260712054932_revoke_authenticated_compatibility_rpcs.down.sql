@@ -1,3 +1,4 @@
+-- Rollback for contract migration 20260712054932.
 begin;
 
 revoke all on function public.import_source_context(

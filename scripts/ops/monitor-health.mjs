@@ -49,7 +49,10 @@ async function checkTarget(target) {
     let lastResult = null;
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       const elapsedMs = performance.now() - startedAt;
-      const remainingMs = Math.max(1, timeoutMs - elapsedMs);
+      // AbortSignal.timeout requires an integer delay. performance.now() makes
+      // this value fractional in real CI runs even when the configured timeout
+      // is an integer.
+      const remainingMs = Math.max(1, Math.floor(timeoutMs - elapsedMs));
 
       try {
         const response = await fetch(url, {
