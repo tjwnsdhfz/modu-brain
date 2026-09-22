@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import ReviewExport from "../components/ReviewExport";
+import { parseReviewArchive, type ReviewArchive } from "../utils/reviewArchive";
 import AnalysisPlaceholder from "../components/AnalysisPlaceholder";
 import ContextImportPanel, { type ContextImportInput } from "../components/ContextImportPanel";
 import DecisionList from "../components/DecisionList";
@@ -23,7 +25,7 @@ type AnalysisState =
   | { status: "idle" }
   | { status: "loading" }
   | { status: "error"; message: string }
-  | { status: "sample" | "success"; result: ContextAnalysisResult };
+  | { status: "sample" | "success" | "restored"; result: ContextAnalysisResult };
 
 function LandingPage({ navigate, initialDemo = false }: { navigate: Navigate; initialDemo?: boolean }) {
   const [composerInput, setComposerInput] = useState<ContextImportInput | undefined>(
@@ -35,10 +37,16 @@ function LandingPage({ navigate, initialDemo = false }: { navigate: Navigate; in
   const [analysisState, setAnalysisState] = useState<AnalysisState>(
     initialDemo ? { status: "sample", result: sampleAnalysis } : { status: "idle" },
   );
+  const [reviewRevision,setReviewRevision]=useState(0);
+  const [lastInput,setLastInput]=useState<ContextImportInput>({provider:"paste",title:sampleAnalysis.projectTitle,text:sampleInput});
+  const [restoredFile,setRestoredFile]=useState<ReviewArchive|null>(null);
+  const [archiveError,setArchiveError]=useState("");
+
   const [activeTab, setActiveTab] = useState<ResultTab>("overview");
   const requestVersion = useRef(0);
   const activeAbortController = useRef<AbortController | null>(null);
   const previousDemoRoute = useRef(initialDemo);
+  async function restore(file?:File) { if(!file)return; try{if(file.size>1024*1024)throw new Error("검토 백업은 1MB 이하로 준비해 주세요.");const archive=parseReviewArchive(await file.text());activeAbortController.current?.abort();requestVersion.current+=1;setComposerInput(archive.input);setComposerRevision(v=>v+1);setLastInput(archive.input);setRestoredFile(archive);setAnalysisState({status:"restored",result:archive.result});setArchiveError("");}catch(reason){setArchiveError(reason instanceof Error?reason.message:"백업을 열지 못했습니다.");} }
 
   useEffect(() => () => activeAbortController.current?.abort(), []);
 
@@ -68,7 +76,7 @@ function LandingPage({ navigate, initialDemo = false }: { navigate: Navigate; in
   }, [initialDemo]);
 
   const analysisResult =
-    analysisState.status === "sample" || analysisState.status === "success"
+    analysisState.status === "sample" || analysisState.status === "success" || analysisState.status === "restored"
       ? analysisState.result
       : null;
   const error = analysisState.status === "error" ? analysisState.message : null;
@@ -89,6 +97,7 @@ function LandingPage({ navigate, initialDemo = false }: { navigate: Navigate; in
       text: sampleInput,
     });
     setComposerRevision((revision) => revision + 1);
+    setLastInput({provider:"paste",title:sampleAnalysis.projectTitle,text:sampleInput});setRestoredFile(null);
     setAnalysisState({ status: "sample", result: sampleAnalysis });
     trackProductEvent("sample_loaded", { entryPoint });
   };
@@ -128,6 +137,7 @@ function LandingPage({ navigate, initialDemo = false }: { navigate: Navigate; in
     try {
       const imported = await analyzeImportedContext(input, { signal: controller.signal });
       if (requestVersion.current !== version) return;
+      setLastInput(input);setRestoredFile(null);setReviewRevision(v=>v+1);
       setAnalysisState({ status: "success", result: imported.result });
       trackProductEvent("analysis_succeeded", { provider: imported.result.provider.name });
     } catch (requestError) {
@@ -169,7 +179,7 @@ function LandingPage({ navigate, initialDemo = false }: { navigate: Navigate; in
           ? "분석 오류"
           : analysisState.status === "sample"
             ? "샘플 데이터"
-            : "분석 대기";
+            : analysisState.status === "restored" ? "백업에서 연 결과 · 출처 미검증" : "분석 대기";
 
   return (
     <main className="app-shell landing-shell">
@@ -196,7 +206,7 @@ function LandingPage({ navigate, initialDemo = false }: { navigate: Navigate; in
         </div>
         <div className="hero-message">
           <p className="eyebrow">어디서 회의했든, 한 장의 맥락으로</p>
-          <h1>결론보다 오래 남아야 할 이유를 연결합니다.</h1>
+          <h1>길어진 대화에서, 결정과 남은 질문을 찾으세요.</h1>
           <p className="hero-copy">
             카카오톡, Teams, Notion, 메모에 흩어진 기록을 계정 연결 없이 가져와
             사람별 관점, 열린 질문, 결정의 실제 근거로 정리합니다.
@@ -220,7 +230,7 @@ function LandingPage({ navigate, initialDemo = false }: { navigate: Navigate; in
               <p className="section-kicker">Current context</p>
               <h2 id="hero-context-title">지금 팀이 놓치기 쉬운 것</h2>
             </div>
-            <span>근거 7개</span>
+            <span>합성 예시</span>
           </div>
           <ol className="hero-context-list">
             <li>
@@ -250,9 +260,10 @@ function LandingPage({ navigate, initialDemo = false }: { navigate: Navigate; in
       <section className="section-intro" id="prototype">
         <p className="section-kicker">Open workspace</p>
         <h2>로그인 없이 붙여넣고, 파일을 열고, 바로 분석하세요</h2>
-        <p>공개 체험의 입력과 결과는 저장되지 않습니다. 프로젝트 보관과 읽기 전용 공유가 필요할 때만 로그인하면 됩니다.</p>
+        <p>입력을 분석한 뒤 문서를 수정하고 파일로 보관할 수 있습니다. 서버 데이터베이스에 저장하지 않으며, 프로젝트 공유가 필요할 때만 로그인하세요.</p>
       </section>
 
+      <div className="review-restore"><label>검토 백업 열기 <input type="file" accept=".json,application/json" onChange={e=>{void restore(e.target.files?.[0]);e.target.value="";}}/></label><p>Modu Brain JSON · 최대 1MB. 입력·분석·수정 문서를 함께 복원합니다. 파일 선택만으로 서버에 전송하지 않습니다.</p>{archiveError&&<p role="alert">{archiveError}</p>}</div>
       <div className="public-import-workspace">
         <ContextImportPanel
           key={`public-context-composer-${composerRevision}`}
@@ -326,6 +337,7 @@ function LandingPage({ navigate, initialDemo = false }: { navigate: Navigate; in
           </div>
         )}
       </section>
+      {analysisResult&&<ReviewExport key={`${composerRevision}-${reviewRevision}-${analysisState.status}`} result={analysisResult} input={lastInput} sample={analysisState.status==="sample"||(analysisState.status==="restored"&&Boolean(restoredFile?.sample))} initialReport={analysisState.status==="restored"?restoredFile?.report:undefined}/>}
     </main>
   );
 }

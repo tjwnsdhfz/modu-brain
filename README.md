@@ -214,3 +214,7 @@ Render는 `npm ci --include=dev && npm run build`, `npm start`, `HOST=0.0.0.0`�
 - [PR 설명 초안](docs/pr-description-draft.md)
 - [무료 운영·백업·장애 대응 런북](docs/operations/free-tier-runbook.md)
 - [Supabase migration ledger 정합화 절차](docs/operations/migration-ledger-reconciliation.md)
+
+## 2026-09-22 품질 점검
+
+변경 내용, 재현한 문제, 검증 범위와 남은 한계: [품질 점검 기록](docs/QUALITY_AUDIT_20260922.md).

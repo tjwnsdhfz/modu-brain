@@ -410,7 +410,7 @@ function ContextImportPanel({
         <div id={privacyId} className={styles.privacyNote}>
           <strong>{mode === "ephemeral" ? "이 기록은 저장하지 않습니다." : "내 계정과 연동하지 않습니다."}</strong>
           <span>{mode === "ephemeral"
-            ? "카카오·Microsoft·Notion 로그인 없이 이 요청에서만 정리합니다. 민감정보는 먼저 제거해 주세요."
+            ? "분석 시 선택한 입력을 이 서비스의 서버로 전송해 처리하며 DB에는 저장하지 않습니다. 카카오·Microsoft·Notion 계정 연결은 필요하지 않습니다. 민감정보는 먼저 제거해 주세요."
             : "카카오·Microsoft·Notion 로그인을 요구하지 않으며, 여기서 직접 선택한 파일과 붙여넣은 내용만 가져옵니다. 민감정보는 먼저 제거해 주세요."}</span>
         </div>
 

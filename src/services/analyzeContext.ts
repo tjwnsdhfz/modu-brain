@@ -40,25 +40,42 @@ export async function analyzeImportedContext(
   input: ImportContextInput,
   options: { signal?: AbortSignal } = {},
 ): Promise<PublicImportedContextAnalysis> {
+  const controller = new AbortController();
+  const abort = () => controller.abort(options.signal?.reason);
+  if (options.signal?.aborted) abort();
+  else options.signal?.addEventListener("abort", abort, { once: true });
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, 60_000);
   let response: Response;
-
+  let payload: unknown;
   try {
     response = await fetch(PUBLIC_CONTEXT_IMPORT_PATH, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(input),
-      signal: options.signal,
+      signal: controller.signal,
     });
+    payload = await parseJson(response);
   } catch (error) {
     if (options.signal?.aborted) throw error;
+    if (timedOut) throw new ContextAnalysisRequestError(
+      "분석 응답이 60초 안에 도착하지 않았습니다. 입력 내용은 유지되며 다시 시도할 수 있습니다.",
+      0, "REQUEST_TIMEOUT",
+    );
+    if (error instanceof ContextAnalysisRequestError) throw error;
     throw new ContextAnalysisRequestError(
       "공개 가져오기 API에 연결할 수 없습니다. 잠시 후 다시 시도해 주세요.",
     );
+  } finally {
+    clearTimeout(timer);
+    options.signal?.removeEventListener("abort", abort);
   }
 
-  const payload = (await parseJson(response)) as PublicImportedContextAnalysis | ContextAnalysisErrorPayload;
   if (!response.ok) {
-    const errorPayload = payload as ContextAnalysisErrorPayload;
+    const errorPayload = (isRecord(payload) ? payload : {}) as ContextAnalysisErrorPayload;
     throw new ContextAnalysisRequestError(
       errorPayload.error?.message || "외부 맥락 가져오기에 실패했습니다.",
       response.status,
