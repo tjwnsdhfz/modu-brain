@@ -8,6 +8,7 @@ import {
 } from "./analyzeContext";
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
@@ -39,6 +40,23 @@ describe("isContextAnalysisResult", () => {
 });
 
 describe("analyzeImportedContext", () => {
+  it("handles a JSON null error body without crashing", async () => {
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockResolvedValue(mockResponse(null, { ok: false, status: 503 })));
+    await expect(analyzeImportedContext({ provider: "paste", text: "회의" }))
+      .rejects.toMatchObject({ status: 503, code: "CONTEXT_IMPORT_FAILED" });
+  });
+  it("stops waiting when the response body hangs", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockImplementation(async (_url, init) => ({
+      ok: true, status: 200,
+      json: () => new Promise((_resolve, reject) => init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true })),
+    } as Response)));
+    const request = expect(analyzeImportedContext({ provider: "paste", text: "회의" }))
+      .rejects.toMatchObject({ code: "REQUEST_TIMEOUT" });
+    await vi.advanceTimersByTimeAsync(60_000);
+    await request;
+    expect(vi.getTimerCount()).toBe(0);
+  });
   it("posts an account-free export and returns normalized context with its analysis", async () => {
     const payload = {
       import: {
