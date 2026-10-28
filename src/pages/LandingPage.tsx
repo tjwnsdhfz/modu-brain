@@ -44,15 +44,40 @@ function LandingPage({ navigate, initialDemo = false }: { navigate: Navigate; in
 
   const [activeTab, setActiveTab] = useState<ResultTab>("overview");
   const requestVersion = useRef(0);
+  const restoreVersion = useRef(0);
   const activeAbortController = useRef<AbortController | null>(null);
   const previousDemoRoute = useRef(initialDemo);
-  async function restore(file?:File) { if(!file)return; try{if(file.size>1024*1024)throw new Error("검토 백업은 1MB 이하로 준비해 주세요.");const archive=parseReviewArchive(await file.text());activeAbortController.current?.abort();requestVersion.current+=1;setComposerInput(archive.input);setComposerRevision(v=>v+1);setLastInput(archive.input);setRestoredFile(archive);setAnalysisState({status:"restored",result:archive.result});setArchiveError("");}catch(reason){setArchiveError(reason instanceof Error?reason.message:"백업을 열지 못했습니다.");} }
+  async function restore(file?: File) {
+    if (!file) return;
+    const version = ++restoreVersion.current;
+    try {
+      if (file.size > 1024 * 1024) throw new Error("검토 백업은 1MB 이하로 준비해 주세요.");
+      const archive = parseReviewArchive(await file.text());
+      if (restoreVersion.current !== version) return;
+      activeAbortController.current?.abort();
+      activeAbortController.current = null;
+      requestVersion.current += 1;
+      setComposerInput(archive.input);
+      setComposerRevision(v => v + 1);
+      setLastInput(archive.input);
+      setRestoredFile(archive);
+      setAnalysisState({ status: "restored", result: archive.result });
+      setArchiveError("");
+    } catch (reason) {
+      if (restoreVersion.current !== version) return;
+      setArchiveError(reason instanceof Error ? reason.message : "백업을 열지 못했습니다.");
+    }
+  }
 
-  useEffect(() => () => activeAbortController.current?.abort(), []);
+  useEffect(() => () => {
+    activeAbortController.current?.abort();
+    restoreVersion.current += 1;
+  }, []);
 
   useEffect(() => {
     if (previousDemoRoute.current === initialDemo) return;
     previousDemoRoute.current = initialDemo;
+    restoreVersion.current += 1;
     activeAbortController.current?.abort();
     activeAbortController.current = null;
     requestVersion.current += 1;
@@ -82,6 +107,7 @@ function LandingPage({ navigate, initialDemo = false }: { navigate: Navigate; in
   const error = analysisState.status === "error" ? analysisState.message : null;
 
   const clearForEdit = () => {
+    restoreVersion.current += 1;
     activeAbortController.current?.abort();
     activeAbortController.current = null;
     requestVersion.current += 1;
@@ -123,6 +149,8 @@ function LandingPage({ navigate, initialDemo = false }: { navigate: Navigate; in
   };
 
   const importAndAnalyze = async (input: ContextImportInput) => {
+    restoreVersion.current += 1;
+    setArchiveError("");
     activeAbortController.current?.abort();
     const controller = new AbortController();
     activeAbortController.current = controller;

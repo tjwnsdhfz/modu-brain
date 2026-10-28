@@ -11,6 +11,7 @@ import {
 } from "./services/analyzeContext";
 import type { PlatformApi } from "./services/platformApi";
 import type { ContextAnalysisResult } from "./types/context";
+import * as reviewArchive from "./utils/reviewArchive";
 
 vi.mock("./services/analyzeContext", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./services/analyzeContext")>();
@@ -70,6 +71,77 @@ describe("public landing prototype", () => {
     expect(screen.getByLabelText(/기록 제목/)).toHaveValue(sampleAnalysis.projectTitle);
     expect(screen.getByLabelText("회의 맥락 붙여넣기")).toHaveValue(sampleInput);
     expect(screen.getByText("샘플 데이터")).toBeInTheDocument();
+  });
+
+  it("exports only synthetic input after navigating from a user analysis to the demo", async () => {
+    const user = userEvent.setup();
+    const download = vi.spyOn(reviewArchive, "downloadReview").mockImplementation(() => undefined);
+    const privateInput = `내 팀의 비공개 회의 기록\n${sampleInput}`;
+    analyzeImportedContextMock.mockResolvedValue({
+      import: { provider: "paste", title: "비공개 회의", content: privateInput, participantCount: 3, segmentCount: 1 },
+      result: sampleAnalysis,
+    });
+    render(<App auth={anonymousAuth()} />);
+    fireEvent.change(screen.getByLabelText("회의 맥락 붙여넣기"), { target: { value: privateInput } });
+    await user.click(screen.getByRole("button", { name: "가져와 바로 분석" }));
+    await screen.findByText(/맥락을 정리해 분석했습니다/);
+    await user.click(screen.getByRole("link", { name: "공개 데모" }));
+    await user.click(screen.getByRole("button", { name: "입력과 결과 백업" }));
+    const archive = reviewArchive.parseReviewArchive(download.mock.calls[0][0]);
+    expect(archive.sample).toBe(true);
+    expect(archive.input.text).toBe(sampleInput);
+    expect(archive.input.title).toBe(sampleAnalysis.projectTitle);
+    expect(archive.input.text).not.toContain("내 팀의 비공개 회의 기록");
+    download.mockRestore();
+  });
+
+  it.each(["valid", "invalid"])("keeps the latest selected backup when an earlier %s file finishes reading later", async (kind) => {
+    const firstText = kind === "invalid" ? "invalid JSON" : reviewArchive.serializeReviewArchive(
+      { provider: "paste", text: "첫 번째 파일의 입력" }, sampleAnalysis, "첫 번째 검토 문서", false,
+    );
+    const secondText = reviewArchive.serializeReviewArchive(
+      { provider: "paste", text: "두 번째 파일의 입력" }, sampleAnalysis, "두 번째 검토 문서", false,
+    );
+    let resolveFirst: (text: string) => void = () => undefined;
+    const pendingRead = new Promise<string>(resolve => { resolveFirst = resolve; });
+    const firstFile = new File([firstText], "first.json", { type: "application/json" });
+    const secondFile = new File([secondText], "second.json", { type: "application/json" });
+    Object.defineProperty(firstFile, "text", { value: () => pendingRead });
+    Object.defineProperty(secondFile, "text", { value: () => Promise.resolve(secondText) });
+    render(<App auth={anonymousAuth()} />);
+    fireEvent.change(screen.getByLabelText(/검토 백업 열기/), { target: { files: [firstFile] } });
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText(/검토 백업 열기/), { target: { files: [secondFile] } });
+    });
+    expect(screen.getByLabelText("회의 맥락 붙여넣기")).toHaveValue("두 번째 파일의 입력");
+    await act(async () => { resolveFirst(firstText); await pendingRead; });
+    expect(screen.getByLabelText("회의 맥락 붙여넣기")).toHaveValue("두 번째 파일의 입력");
+    expect(screen.getByLabelText("검토 문서 · Markdown")).toHaveValue("두 번째 검토 문서");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("does not let an earlier backup overwrite a newly requested analysis", async () => {
+    const user = userEvent.setup();
+    const archivedText = reviewArchive.serializeReviewArchive(
+      { provider: "paste", text: "이전 파일의 입력" }, sampleAnalysis, "이전 검토 문서", false,
+    );
+    let resolveRead: (text: string) => void = () => undefined;
+    const pendingRead = new Promise<string>(resolve => { resolveRead = resolve; });
+    const archiveFile = new File([archivedText], "old.json", { type: "application/json" });
+    Object.defineProperty(archiveFile, "text", { value: () => pendingRead });
+    analyzeImportedContextMock.mockResolvedValue({
+      import: { provider: "paste", title: "새 분석", content: sampleInput, participantCount: 3, segmentCount: 1 },
+      result: sampleAnalysis,
+    });
+    render(<App auth={anonymousAuth()} />);
+    fireEvent.change(screen.getByLabelText(/검토 백업 열기/), { target: { files: [archiveFile] } });
+    fireEvent.change(screen.getByLabelText("회의 맥락 붙여넣기"), { target: { value: sampleInput } });
+    await user.click(screen.getByRole("button", { name: "가져와 바로 분석" }));
+    await screen.findByText(/맥락을 정리해 분석했습니다/);
+    await act(async () => { resolveRead(archivedText); await pendingRead; });
+    expect(screen.getByLabelText("회의 맥락 붙여넣기")).toHaveValue(sampleInput);
+    expect(screen.getByLabelText("검토 문서 · Markdown")).not.toHaveValue("이전 검토 문서");
+    expect(screen.queryByText("백업에서 연 결과 · 출처 미검증")).not.toBeInTheDocument();
   });
 
   it("imports and analyzes external context without requiring a login", async () => {
